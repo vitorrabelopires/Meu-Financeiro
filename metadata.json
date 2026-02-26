@@ -1,0 +1,5 @@
+{
+  "name": "Meu Financeiro",
+  "description": "Um gerenciador financeiro pessoal completo com controle de gastos, receitas e relatórios detalhados.",
+  "requestFramePermissions": []
+}
