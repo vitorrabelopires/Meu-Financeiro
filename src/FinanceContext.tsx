@@ -2,8 +2,11 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from '
 import { Transaction, Account, Category, CreditCard, Tag, NotificationSettings, DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES } from './types';
 import { parseISO, isSameMonth, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { auth, onAuthStateChanged } from './firebase';
+import { User } from 'firebase/auth';
 
 interface FinanceContextType {
+  user: User | null;
   transactions: Transaction[];
   accounts: Account[];
   categories: Category[];
@@ -33,12 +36,21 @@ interface FinanceContextType {
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>(DEFAULT_ACCOUNTS);
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   const [creditCards, setCreditCards] = useState<CreditCard[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Listen for auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
     const saved = localStorage.getItem('ff_notifications');
@@ -280,6 +292,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   return (
     <FinanceContext.Provider value={{
+      user,
       transactions,
       accounts,
       categories,

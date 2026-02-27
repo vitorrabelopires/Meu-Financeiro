@@ -62,6 +62,7 @@ import {
 } from 'recharts';
 import { FinanceProvider, useFinance } from './FinanceContext';
 import { formatCurrency, TransactionType, cn, DEFAULT_CATEGORIES, Transaction } from './types';
+import { UserManager } from './components/UserManager';
 
 const ICON_MAP: Record<string, any> = {
   Wallet,
@@ -1925,27 +1926,7 @@ const SettingsTab = () => {
           )}
 
           {activeSubTab === 'categories' && <CategoryManager />}
-          {activeSubTab === 'users' && (
-            <div className="bg-white p-6 rounded-3xl card-shadow space-y-6">
-              <div className="flex flex-col items-center text-center space-y-3">
-                <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 border-4 border-white shadow-inner">
-                  <User size={40} />
-                </div>
-                <div>
-                  <p className="text-lg font-bold text-slate-800">Usuário Padrão</p>
-                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Administrador</p>
-                </div>
-              </div>
-              <div className="pt-4 border-t border-slate-50 space-y-3">
-                <button className="w-full py-3 px-4 bg-slate-50 rounded-xl text-sm font-semibold text-slate-600 text-left flex justify-between items-center">
-                  Editar Perfil <ChevronRight size={16} />
-                </button>
-                <button className="w-full py-3 px-4 bg-slate-50 rounded-xl text-sm font-semibold text-slate-600 text-left flex justify-between items-center">
-                  Alterar Senha <ChevronRight size={16} />
-                </button>
-              </div>
-            </div>
-          )}
+          {activeSubTab === 'users' && <UserManager />}
           {activeSubTab === 'cards' && <CreditCardManager />}
           {activeSubTab === 'reports' && <ReportGenerator />}
           {activeSubTab === 'tags' && <TagManager />}
