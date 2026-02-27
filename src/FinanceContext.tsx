@@ -33,30 +33,12 @@ interface FinanceContextType {
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    const saved = localStorage.getItem('ff_transactions');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [accounts, setAccounts] = useState<Account[]>(() => {
-    const saved = localStorage.getItem('ff_accounts');
-    return saved ? JSON.parse(saved) : DEFAULT_ACCOUNTS;
-  });
-
-  const [categories, setCategories] = useState<Category[]>(() => {
-    const saved = localStorage.getItem('ff_categories');
-    return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
-  });
-
-  const [creditCards, setCreditCards] = useState<CreditCard[]>(() => {
-    const saved = localStorage.getItem('ff_credit_cards');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [tags, setTags] = useState<Tag[]>(() => {
-    const saved = localStorage.getItem('ff_tags');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>(DEFAULT_ACCOUNTS);
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+  const [creditCards, setCreditCards] = useState<CreditCard[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
     const saved = localStorage.getItem('ff_notifications');
@@ -68,33 +50,44 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   });
 
+  // Load initial data from API
   useEffect(() => {
-    localStorage.setItem('ff_transactions', JSON.stringify(transactions));
-  }, [transactions]);
+    const loadData = async () => {
+      try {
+        const [tRes, aRes, cRes, ccRes, tagRes] = await Promise.all([
+          fetch('/api/transactions'),
+          fetch('/api/accounts'),
+          fetch('/api/categories'),
+          fetch('/api/credit-cards'),
+          fetch('/api/tags')
+        ]);
 
-  useEffect(() => {
-    localStorage.setItem('ff_accounts', JSON.stringify(accounts));
-  }, [accounts]);
-
-  useEffect(() => {
-    localStorage.setItem('ff_categories', JSON.stringify(categories));
-  }, [categories]);
-
-  useEffect(() => {
-    localStorage.setItem('ff_credit_cards', JSON.stringify(creditCards));
-  }, [creditCards]);
-
-  useEffect(() => {
-    localStorage.setItem('ff_tags', JSON.stringify(tags));
-  }, [tags]);
+        if (tRes.ok) setTransactions(await tRes.json());
+        if (aRes.ok) setAccounts(await aRes.json());
+        if (cRes.ok) setCategories(await cRes.json());
+        if (ccRes.ok) setCreditCards(await ccRes.json());
+        if (tagRes.ok) setTags(await tagRes.json());
+      } catch (error) {
+        console.error("Failed to load data from API:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('ff_notifications', JSON.stringify(notificationSettings));
   }, [notificationSettings]);
 
-  const addCategory = (c: Omit<Category, 'id'>) => {
+  const addCategory = async (c: Omit<Category, 'id'>) => {
     const newCategory = { ...c, id: Math.random().toString(36).substr(2, 9) };
     setCategories(prev => [...prev, newCategory]);
+    await fetch('/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newCategory)
+    });
   };
 
   const updateCategory = (id: string, updates: Partial<Category>) => {
@@ -139,27 +132,40 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setTransactions(prev => [...data, ...prev]);
   };
 
-  const addTransaction = (t: Omit<Transaction, 'id'>) => {
+  const addTransaction = async (t: Omit<Transaction, 'id'>) => {
     const newTransaction = { ...t, id: Math.random().toString(36).substr(2, 9) };
     setTransactions(prev => [newTransaction, ...prev]);
 
-    // Update account balance
-    setAccounts(prev => prev.map(acc => {
+    // Update account balance locally
+    const updatedAccounts = accounts.map(acc => {
       if (acc.id === t.accountId) {
-        return {
-          ...acc,
-          balance: t.type === 'income' ? acc.balance + t.amount : acc.balance - t.amount
-        };
+        const newBalance = t.type === 'income' ? acc.balance + t.amount : acc.balance - t.amount;
+        // Sync balance to API
+        fetch(`/api/accounts/${acc.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ balance: newBalance })
+        });
+        return { ...acc, balance: newBalance };
       }
       return acc;
-    }));
+    });
+    setAccounts(updatedAccounts);
+
+    // Save transaction to API
+    await fetch('/api/transactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newTransaction)
+    });
   };
 
-  const updateTransaction = (id: string, updates: Partial<Transaction>) => {
+  const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
     const oldT = transactions.find(t => t.id === id);
     if (!oldT) return;
 
-    setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    const newT = { ...oldT, ...updates };
+    setTransactions(prev => prev.map(t => t.id === id ? newT : t));
 
     // Update balance if critical fields changed
     if (updates.amount !== undefined || updates.type !== undefined || updates.accountId !== undefined) {
@@ -167,40 +173,68 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const newType = updates.type ?? oldT.type;
       const newAccountId = updates.accountId ?? oldT.accountId;
 
-      setAccounts(prev => prev.map(acc => {
+      const updatedAccounts = accounts.map(acc => {
         let balance = acc.balance;
+        let changed = false;
         
         // Revert old
         if (acc.id === oldT.accountId) {
           balance = oldT.type === 'income' ? balance - oldT.amount : balance + oldT.amount;
+          changed = true;
         }
         
         // Apply new
         if (acc.id === newAccountId) {
           balance = newType === 'income' ? balance + newAmount : balance - newAmount;
+          changed = true;
+        }
+        
+        if (changed) {
+          fetch(`/api/accounts/${acc.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ balance })
+          });
         }
         
         return { ...acc, balance };
-      }));
+      });
+      setAccounts(updatedAccounts);
     }
+
+    // Save update to API
+    await fetch(`/api/transactions/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newT)
+    });
   };
 
-  const deleteTransaction = (id: string) => {
+  const deleteTransaction = async (id: string) => {
     const t = transactions.find(tx => tx.id === id);
     if (!t) return;
 
     setTransactions(prev => prev.filter(tx => tx.id !== id));
 
     // Revert account balance
-    setAccounts(prev => prev.map(acc => {
+    const updatedAccounts = accounts.map(acc => {
       if (acc.id === t.accountId) {
-        return {
-          ...acc,
-          balance: t.type === 'income' ? acc.balance - t.amount : acc.balance + t.amount
-        };
+        const newBalance = t.type === 'income' ? acc.balance - t.amount : acc.balance + t.amount;
+        fetch(`/api/accounts/${acc.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ balance: newBalance })
+        });
+        return { ...acc, balance: newBalance };
       }
       return acc;
-    }));
+    });
+    setAccounts(updatedAccounts);
+
+    // Delete from API
+    await fetch(`/api/transactions/${id}`, {
+      method: 'DELETE'
+    });
   };
 
   const totalBalance = accounts.reduce((acc, curr) => acc + curr.balance, 0);
@@ -209,7 +243,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const now = new Date();
     const monthlyTransactions = transactions.filter(t => {
       try {
-        const d = new Date(t.date);
+        const d = parseISO(t.date);
         return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       } catch (e) {
         return false;
@@ -232,6 +266,17 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       currentMonthName: monthName.charAt(0).toUpperCase() + monthName.slice(1)
     };
   }, [transactions]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-black border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Carregando Dados...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <FinanceContext.Provider value={{
