@@ -63,6 +63,7 @@ import {
 import { FinanceProvider, useFinance } from './FinanceContext';
 import { formatCurrency, TransactionType, cn, DEFAULT_CATEGORIES, Transaction } from './types';
 import { UserManager } from './components/UserManager';
+import { LoginPage } from './components/LoginPage';
 
 const ICON_MAP: Record<string, any> = {
   Wallet,
@@ -2069,9 +2070,14 @@ const Sidebar = ({ activeTab, setActiveTab, setIsAdding }: { activeTab: string, 
 };
 
 const AppContent = () => {
+  const { user } = useFinance();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isAdding, setIsAdding] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+
+  if (!user) {
+    return <LoginPage />;
+  }
 
   const handleEdit = (t: Transaction) => {
     setEditingTransaction(t);
