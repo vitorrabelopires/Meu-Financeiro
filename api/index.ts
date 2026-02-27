@@ -1,9 +1,13 @@
 import express from "express";
-import { sql } from "@vercel/postgres";
+import { neon } from "@neondatabase/serverless";
 import path from "path";
 
 const app = express();
 app.use(express.json());
+
+// Initialize Neon SQL client
+// Vercel provides POSTGRES_URL when you connect the Neon integration
+const sql = neon(process.env.POSTGRES_URL!);
 
 // Initialize Database Schema for Postgres
 const initDb = async () => {
@@ -43,14 +47,14 @@ const initDb = async () => {
     `;
 
     // Seed defaults if empty
-    const { rows: accountRows } = await sql`SELECT COUNT(*) as count FROM accounts`;
-    if (parseInt(accountRows[0].count) === 0) {
+    const accountRows = await sql`SELECT COUNT(*) as count FROM accounts`;
+    if (parseInt((accountRows[0] as any).count) === 0) {
       await sql`INSERT INTO accounts (id, name, balance, color, icon) VALUES ('1', 'Carteira', 0, '#000000', 'Wallet')`;
       await sql`INSERT INTO accounts (id, name, balance, color, icon) VALUES ('2', 'Conta Corrente', 0, '#333333', 'Banknote')`;
     }
 
-    const { rows: categoryRows } = await sql`SELECT COUNT(*) as count FROM categories`;
-    if (parseInt(categoryRows[0].count) === 0) {
+    const categoryRows = await sql`SELECT COUNT(*) as count FROM categories`;
+    if (parseInt((categoryRows[0] as any).count) === 0) {
       const defaults = [
         { id: 'c1', name: 'Alimentação', icon: 'Utensils', color: '#f59e0b', type: 'expense' },
         { id: 'c2', name: 'Transporte', icon: 'Car', color: '#3b82f6', type: 'expense' },
@@ -79,7 +83,7 @@ app.use(async (req, res, next) => {
 // API Routes
 app.get("/api/transactions", async (req, res) => {
   try {
-    const { rows } = await sql`SELECT * FROM transactions ORDER BY date DESC`;
+    const rows = await sql`SELECT * FROM transactions ORDER BY date DESC`;
     const transactions = rows.map((row: any) => ({
       ...row,
       tags: row.tags ? JSON.parse(row.tags) : []
@@ -130,7 +134,7 @@ app.delete("/api/transactions/:id", async (req, res) => {
 
 app.get("/api/categories", async (req, res) => {
   try {
-    const { rows } = await sql`SELECT * FROM categories`;
+    const rows = await sql`SELECT * FROM categories`;
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e });
@@ -149,7 +153,7 @@ app.post("/api/categories", async (req, res) => {
 
 app.get("/api/accounts", async (req, res) => {
   try {
-    const { rows } = await sql`SELECT * FROM accounts`;
+    const rows = await sql`SELECT * FROM accounts`;
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e });
@@ -169,7 +173,7 @@ app.put("/api/accounts/:id", async (req, res) => {
 
 app.get("/api/credit-cards", async (req, res) => {
   try {
-    const { rows } = await sql`SELECT * FROM credit_cards`;
+    const rows = await sql`SELECT * FROM credit_cards`;
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e });
@@ -178,7 +182,7 @@ app.get("/api/credit-cards", async (req, res) => {
 
 app.get("/api/tags", async (req, res) => {
   try {
-    const { rows } = await sql`SELECT * FROM tags`;
+    const rows = await sql`SELECT * FROM tags`;
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e });
