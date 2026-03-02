@@ -41,7 +41,8 @@ import {
   Droplets,
   Shield,
   Star,
-  Heart
+  Heart,
+  LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, parseISO } from 'date-fns';
@@ -62,6 +63,7 @@ import {
 } from 'recharts';
 import { FinanceProvider, useFinance } from './FinanceContext';
 import { formatCurrency, TransactionType, cn, DEFAULT_CATEGORIES, Transaction } from './types';
+import { auth } from './firebase';
 import { UserManager } from './components/UserManager';
 import { LoginPage } from './components/LoginPage';
 
@@ -101,7 +103,7 @@ const CategoryIcon = ({ icon, size = 20, className = "" }: { icon: string, size?
 };
 
 const Dashboard = () => {
-  const { totalBalance, monthlyIncome, monthlyExpense, currentMonthName, transactions, categories, creditCards, tags } = useFinance();
+  const { user, totalBalance, monthlyIncome, monthlyExpense, currentMonthName, transactions, categories, creditCards, tags } = useFinance();
 
   const now = new Date();
   const monthlyTransactions = transactions.filter(t => {
@@ -154,6 +156,9 @@ const Dashboard = () => {
             <p className="text-slate-400 text-[10px] lg:text-xs font-bold uppercase tracking-widest">{currentMonthName}</p>
             <div className="mt-2 hidden lg:flex gap-2 justify-end">
                <div className="px-3 py-1 bg-white/10 rounded-full text-[10px] font-bold uppercase tracking-tighter">Premium</div>
+               {user?.email === 'admin@meufinanceiro.com' && (
+                 <div className="px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-bold uppercase tracking-tighter">Admin Master</div>
+               )}
             </div>
           </div>
         </div>
@@ -1999,11 +2004,20 @@ const SettingsTab = () => {
         ))}
       </div>
 
-      <div className="p-8 text-center">
-        <div className="inline-flex items-center justify-center w-12 h-12 bg-slate-100 rounded-full mb-3">
-          <Settings size={20} className="text-slate-400" />
+      <div className="p-8 text-center space-y-6">
+        <button 
+          onClick={() => auth.signOut()}
+          className="lg:hidden w-full py-4 bg-rose-50 text-rose-500 rounded-2xl text-sm font-black flex items-center justify-center gap-2 active:scale-95 transition-all"
+        >
+          <LogOut size={18} /> Sair da Conta
+        </button>
+
+        <div>
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-slate-100 rounded-full mb-3">
+            <Settings size={20} className="text-slate-400" />
+          </div>
+          <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Meu Financeiro v1.0</p>
         </div>
-        <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Meu Financeiro v1.0</p>
       </div>
     </div>
   );
@@ -2046,6 +2060,16 @@ const Sidebar = ({ activeTab, setActiveTab, setIsAdding }: { activeTab: string, 
           </button>
         ))}
       </nav>
+
+      <div className="mt-auto pt-8 border-t border-slate-50">
+        <button 
+          onClick={() => auth.signOut()}
+          className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl font-bold text-sm text-rose-500 hover:bg-rose-50 transition-all group"
+        >
+          <LogOut size={22} className="group-hover:scale-110 transition-transform" />
+          Sair da Conta
+        </button>
+      </div>
 
       <div className="mt-auto space-y-4">
         <button

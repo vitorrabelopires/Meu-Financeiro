@@ -21,11 +21,30 @@ export const LoginPage = () => {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    
+    // Auto-append domain for usernames
+    let finalEmail = email;
+    if (!email.includes('@')) {
+      finalEmail = `${email}@meufinanceiro.com`;
+    }
+
     try {
       if (isRegistering) {
-        await createUserWithEmailAndPassword(auth, email, password);
+        await createUserWithEmailAndPassword(auth, finalEmail, password);
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        try {
+          await signInWithEmailAndPassword(auth, finalEmail, password);
+        } catch (err: any) {
+          // If user doesn't exist and it's one of the requested users, try to create it
+          const allowedUsers = ['admin', 'victor.r', 'vinicius.r', 'nagela.a'];
+          const username = email.split('@')[0];
+          
+          if (err.code === 'auth/user-not-found' && allowedUsers.includes(username)) {
+            await createUserWithEmailAndPassword(auth, finalEmail, password);
+          } else {
+            throw err;
+          }
+        }
       }
     } catch (err: any) {
       setError(err.message);
@@ -128,8 +147,8 @@ export const LoginPage = () => {
                 <div className="relative group">
                   <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-black transition-colors" size={18} />
                   <input 
-                    type="email" 
-                    placeholder="E-mail" 
+                    type="text" 
+                    placeholder="E-mail ou Usuário" 
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required

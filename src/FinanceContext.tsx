@@ -48,6 +48,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      if (!currentUser) {
+        setLoading(false);
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -64,14 +67,22 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Load initial data from API
   useEffect(() => {
+    if (!user) return;
+
     const loadData = async () => {
+      setLoading(true);
       try {
+        const headers = {
+          'x-user-id': user.uid,
+          'x-is-admin': user.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        };
+
         const [tRes, aRes, cRes, ccRes, tagRes] = await Promise.all([
-          fetch('/api/transactions'),
-          fetch('/api/accounts'),
-          fetch('/api/categories'),
-          fetch('/api/credit-cards'),
-          fetch('/api/tags')
+          fetch('/api/transactions', { headers }),
+          fetch('/api/accounts', { headers }),
+          fetch('/api/categories', { headers }),
+          fetch('/api/credit-cards', { headers }),
+          fetch('/api/tags', { headers })
         ]);
 
         if (tRes.ok) setTransactions(await tRes.json());
@@ -86,7 +97,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }
     };
     loadData();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     localStorage.setItem('ff_notifications', JSON.stringify(notificationSettings));
@@ -97,7 +108,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setCategories(prev => [...prev, newCategory]);
     await fetch('/api/categories', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-user-id': user?.uid || '',
+        'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+      },
       body: JSON.stringify(newCategory)
     });
   };
@@ -155,7 +170,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // Sync balance to API
         fetch(`/api/accounts/${acc.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-user-id': user?.uid || '',
+            'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+          },
           body: JSON.stringify({ balance: newBalance })
         });
         return { ...acc, balance: newBalance };
@@ -167,7 +186,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Save transaction to API
     await fetch('/api/transactions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-user-id': user?.uid || '',
+        'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+      },
       body: JSON.stringify(newTransaction)
     });
   };
@@ -204,7 +227,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (changed) {
           fetch(`/api/accounts/${acc.id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-user-id': user?.uid || '',
+              'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+            },
             body: JSON.stringify({ balance })
           });
         }
@@ -217,7 +244,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     // Save update to API
     await fetch(`/api/transactions/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-user-id': user?.uid || '',
+        'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+      },
       body: JSON.stringify(newT)
     });
   };
@@ -234,7 +265,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const newBalance = t.type === 'income' ? acc.balance - t.amount : acc.balance + t.amount;
         fetch(`/api/accounts/${acc.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-user-id': user?.uid || '',
+            'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+          },
           body: JSON.stringify({ balance: newBalance })
         });
         return { ...acc, balance: newBalance };
@@ -245,7 +280,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // Delete from API
     await fetch(`/api/transactions/${id}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: { 
+        'x-user-id': user?.uid || '',
+        'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+      }
     });
   };
 
