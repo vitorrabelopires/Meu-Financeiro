@@ -401,7 +401,7 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
         animate={{ y: 0, scale: 1 }}
         exit={{ y: 100, scale: 0.95 }}
         className={cn(
-          "bg-white/95 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 space-y-6 shadow-2xl border max-h-[90vh] overflow-y-auto transition-all duration-500",
+          "bg-white/95 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border max-h-[90vh] overflow-y-auto transition-all duration-500",
           initialData ? "border-amber-200 ring-8 ring-amber-50/50" : "border-white/20"
         )}
       >
@@ -653,7 +653,7 @@ const CategoryManager = () => {
               initial={{ y: 100, scale: 0.95 }}
               animate={{ y: 0, scale: 1 }}
               exit={{ y: 100, scale: 0.95 }}
-              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 space-y-6 shadow-2xl border border-white/20"
+              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -885,7 +885,7 @@ const CreditCardManager = () => {
               initial={{ y: 100, scale: 0.95 }} 
               animate={{ y: 0, scale: 1 }} 
               exit={{ y: 100, scale: 0.95 }} 
-              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 space-y-6 shadow-2xl border border-white/20"
+              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -1078,7 +1078,7 @@ const TagManager = () => {
               initial={{ y: 100, scale: 0.95 }} 
               animate={{ y: 0, scale: 1 }} 
               exit={{ y: 100, scale: 0.95 }} 
-              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 space-y-6 shadow-2xl border border-white/20"
+              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between">
                 <div>
