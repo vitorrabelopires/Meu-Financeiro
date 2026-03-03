@@ -76,7 +76,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         const headers = {
           'x-user-id': user.uid,
-          'x-is-admin': user.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+          'x-is-admin': user.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
         };
 
         const [tRes, aRes, cRes, ccRes, tagRes] = await Promise.all([
