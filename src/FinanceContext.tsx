@@ -3,6 +3,7 @@ import { Transaction, Account, Category, CreditCard, Tag, NotificationSettings, 
 import { parseISO, isSameMonth, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { auth, onAuthStateChanged } from './firebase';
+import { Settings } from 'lucide-react';
 import { User } from 'firebase/auth';
 
 interface FinanceContextType {
@@ -43,6 +44,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [creditCards, setCreditCards] = useState<CreditCard[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Listen for auth state changes
   useEffect(() => {
@@ -90,8 +92,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (cRes.ok) setCategories(await cRes.json());
         if (ccRes.ok) setCreditCards(await ccRes.json());
         if (tagRes.ok) setTags(await tagRes.json());
-      } catch (error) {
+        setError(null);
+      } catch (error: any) {
         console.error("Failed to load data from API:", error);
+        setError("Não foi possível carregar seus dados. Verifique sua conexão ou as configurações do banco de dados.");
       } finally {
         setLoading(false);
       }
@@ -320,10 +324,38 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-black border-t-transparent rounded-full animate-spin" />
           <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Carregando Dados...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && user) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="max-w-md w-full bg-white p-8 rounded-[2.5rem] card-shadow border border-rose-100 text-center space-y-6">
+          <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-2xl flex items-center justify-center mx-auto">
+            <Settings size={32} />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-xl font-black text-slate-800">Erro de Conexão</h3>
+            <p className="text-sm text-slate-400 font-medium">{error}</p>
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full py-4 bg-black text-white rounded-2xl text-sm font-black shadow-xl active:scale-95 transition-all"
+          >
+            Tentar Novamente
+          </button>
+          <button 
+            onClick={() => auth.signOut()}
+            className="w-full py-4 bg-slate-50 text-slate-400 rounded-2xl text-sm font-black active:scale-95 transition-all"
+          >
+            Sair da Conta
+          </button>
         </div>
       </div>
     );

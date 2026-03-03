@@ -14,6 +14,19 @@ let db: any = null;
 
 if (process.env.POSTGRES_URL) {
   sql = neon(process.env.POSTGRES_URL);
+  // Initialize Postgres tables
+  const initPostgres = async () => {
+    try {
+      await sql`CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, description TEXT, amount REAL, date TEXT, category TEXT, type TEXT, accountId TEXT, tags TEXT, creditCardId TEXT, userId TEXT)`;
+      await sql`CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT, icon TEXT, color TEXT, type TEXT, userId TEXT)`;
+      await sql`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, name TEXT, balance REAL, color TEXT, icon TEXT, userId TEXT)`;
+      await sql`CREATE TABLE IF NOT EXISTS credit_cards (id TEXT PRIMARY KEY, name TEXT, brand TEXT, bank TEXT, limit_val REAL, closingDay INTEGER, dueDay INTEGER, color TEXT, userId TEXT)`;
+      await sql`CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY, name TEXT, color TEXT, userId TEXT)`;
+    } catch (e) {
+      console.error("Postgres initialization error:", e);
+    }
+  };
+  initPostgres();
 } else {
   db = new Database("finance.db");
   db.exec(`

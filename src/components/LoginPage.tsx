@@ -28,6 +28,13 @@ export const LoginPage = () => {
       finalEmail = `${email}@meufinanceiro.com`;
     }
 
+    // Firebase requires at least 6 characters for passwords
+    if (password.length < 6) {
+      setError('A senha deve ter pelo menos 6 caracteres. Tente algo como "admin01" ou "admin123".');
+      setLoading(false);
+      return;
+    }
+
     try {
       if (isRegistering) {
         await createUserWithEmailAndPassword(auth, finalEmail, password);
@@ -47,7 +54,13 @@ export const LoginPage = () => {
         }
       }
     } catch (err: any) {
-      setError(err.message);
+      let msg = err.message;
+      if (err.code === 'auth/wrong-password') msg = 'Senha incorreta.';
+      if (err.code === 'auth/user-not-found') msg = 'Usuário não encontrado.';
+      if (err.code === 'auth/email-already-in-use') msg = 'Este e-mail já está em uso.';
+      if (err.code === 'auth/invalid-email') msg = 'E-mail inválido.';
+      if (err.code === 'auth/weak-password') msg = 'A senha é muito fraca (mínimo 6 caracteres).';
+      setError(msg);
     } finally {
       setLoading(false);
     }
