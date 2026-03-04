@@ -809,7 +809,6 @@ const CreditCardManager = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [formData, setFormData] = useState({ name: '', brand: 'Visa', bank: '', limit: 0, closingDay: 1, dueDay: 10, color: '#000000' });
 
-  const availableColors = ['#000000', '#ef4444', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6', '#ec4899', '#64748b'];
   const brands = ['Visa', 'Mastercard', 'Elo', 'American Express', 'Hipercard'];
 
   const handleSave = () => {
@@ -984,21 +983,14 @@ const CreditCardManager = () => {
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Cor do Cartão</label>
-                  <div className="flex flex-wrap gap-3">
-                    {availableColors.map(color => (
-                      <button 
-                        key={color} 
-                        onClick={() => setFormData({ ...formData, color })} 
-                        className={cn(
-                          "w-8 h-8 rounded-full border-2 transition-all active:scale-75", 
-                          formData.color === color ? "border-black scale-110 shadow-lg" : "border-transparent"
-                        )} 
-                        style={{ backgroundColor: color }} 
-                      />
-                    ))}
-                  </div>
+                  <input 
+                    type="color"
+                    value={formData.color}
+                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                    className="w-full h-14 bg-slate-100/50 border-none rounded-2xl p-1 focus:ring-2 focus:ring-black outline-none cursor-pointer"
+                  />
                 </div>
               </div>
 

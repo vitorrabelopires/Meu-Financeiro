@@ -51,13 +51,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // Listen for auth state changes
   useEffect(() => {
+    const authTimeout = setTimeout(() => {
+      if (loading && !user) {
+        console.warn("Auth check timed out. Falling back to unauthenticated state.");
+        setLoading(false);
+      }
+    }, 5000); // 5 seconds timeout for auth
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      clearTimeout(authTimeout);
       setUser(currentUser);
       if (!currentUser) {
         setLoading(false);
       }
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      clearTimeout(authTimeout);
+    };
   }, []);
 
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
@@ -73,31 +84,59 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const loadData = async () => {
       setLoading(true);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
       try {
         const headers = {
           'x-user-id': user.uid,
           'x-is-admin': user.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
         };
 
+        const fetchOptions = { headers, signal: controller.signal };
+
         const [tRes, aRes, cRes, ccRes, tagRes, nRes] = await Promise.all([
-          fetch('/api/transactions', { headers }),
-          fetch('/api/accounts', { headers }),
-          fetch('/api/categories', { headers }),
-          fetch('/api/credit-cards', { headers }),
-          fetch('/api/tags', { headers }),
-          fetch('/api/notifications', { headers })
+          fetch('/api/transactions', fetchOptions),
+          fetch('/api/accounts', fetchOptions),
+          fetch('/api/categories', fetchOptions),
+          fetch('/api/credit-cards', fetchOptions),
+          fetch('/api/tags', fetchOptions),
+          fetch('/api/notifications', fetchOptions)
         ]);
 
-        if (tRes.ok) setTransactions(await tRes.json());
-        if (aRes.ok) setAccounts(await aRes.json());
-        if (cRes.ok) setCategories(await cRes.json());
-        if (ccRes.ok) setCreditCards(await ccRes.json());
-        if (tagRes.ok) setTags(await tagRes.json());
-        if (nRes.ok) setNotificationSettings(await nRes.json());
+        clearTimeout(timeoutId);
+
+        const parseJson = async (res: Response) => {
+          if (!res.ok) {
+            const text = await res.text();
+            if (text.includes('<!doctype html>') || text.includes('<html>')) {
+              throw new Error(`O servidor retornou uma página HTML em vez de dados (Status: ${res.status}). Isso geralmente acontece quando o banco de dados não está configurado na Vercel.`);
+            }
+            try {
+              const json = JSON.parse(text);
+              throw new Error(json.error || `Erro na API: ${res.status}`);
+            } catch {
+              throw new Error(`Erro na API: ${res.status}`);
+            }
+          }
+          return res.json();
+        };
+
+        setTransactions(await parseJson(tRes));
+        setAccounts(await parseJson(aRes));
+        setCategories(await parseJson(cRes));
+        setCreditCards(await parseJson(ccRes));
+        setTags(await parseJson(tagRes));
+        setNotificationSettings(await parseJson(nRes));
+        
         setError(null);
       } catch (error: any) {
         console.error("Failed to load data from API:", error);
-        setError("Não foi possível carregar seus dados. Verifique sua conexão ou as configurações do banco de dados.");
+        if (error.name === 'AbortError') {
+          setError("O servidor demorou muito para responder. Verifique se o banco de dados (Neon) está ativo e configurado na Vercel.");
+        } else {
+          setError(error.message || "Não foi possível carregar seus dados. Verifique sua conexão ou as configurações do banco de dados na Vercel.");
+        }
       } finally {
         setLoading(false);
       }

@@ -116,9 +116,9 @@ app.get("/api/categories", async (req, res) => {
         { id: 'c5', name: 'Salário', icon: 'DollarSign', color: '#10b981', type: 'income' },
         { id: 'c6', name: 'Investimentos', icon: 'TrendingUp', color: '#000000', type: 'income' },
       ];
-      for (const c of defaults) {
-        await sql`INSERT INTO categories (id, name, icon, color, type, userId) VALUES (${c.id + '_' + userId}, ${c.name}, ${c.icon}, ${c.color}, ${c.type}, ${userId})`;
-      }
+      await Promise.all(defaults.map(c => 
+        sql`INSERT INTO categories (id, name, icon, color, type, userId) VALUES (${c.id + '_' + userId}, ${c.name}, ${c.icon}, ${c.color}, ${c.type}, ${userId})`
+      ));
       rows = await sql`SELECT * FROM categories WHERE userId = ${userId}`;
     }
     res.json(rows);
@@ -174,8 +174,10 @@ app.get("/api/accounts", async (req, res) => {
       : await sql`SELECT * FROM accounts WHERE userId = ${userId}`;
     
     if (!admin && rows.length === 0) {
-      await sql`INSERT INTO accounts (id, name, balance, color, icon, userId) VALUES (${'1_' + userId}, 'Carteira', 0, '#000000', 'Wallet', ${userId})`;
-      await sql`INSERT INTO accounts (id, name, balance, color, icon, userId) VALUES (${'2_' + userId}, 'Conta Corrente', 0, '#333333', 'Banknote', ${userId})`;
+      await Promise.all([
+        sql`INSERT INTO accounts (id, name, balance, color, icon, userId) VALUES (${'1_' + userId}, 'Carteira', 0, '#000000', 'Wallet', ${userId})`,
+        sql`INSERT INTO accounts (id, name, balance, color, icon, userId) VALUES (${'2_' + userId}, 'Conta Corrente', 0, '#333333', 'Banknote', ${userId})`
+      ]);
       rows = await sql`SELECT * FROM accounts WHERE userId = ${userId}`;
     }
     res.json(rows);
