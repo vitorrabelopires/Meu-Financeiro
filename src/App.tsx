@@ -25,6 +25,7 @@ import {
   User,
   Download,
   Upload,
+  Search,
   MoreHorizontal,
   Bell,
   ShoppingBag,
@@ -102,7 +103,7 @@ const CategoryIcon = ({ icon, size = 20, className = "" }: { icon: string, size?
   return <span className={cn("flex items-center justify-center leading-none select-none", className)} style={{ fontSize: `${size}px`, width: size, height: size }}>{icon}</span>;
 };
 
-const Dashboard = () => {
+const Dashboard = ({ onViewAll }: { onViewAll: () => void }) => {
   const { user, totalBalance, monthlyIncome, monthlyExpense, currentMonthName, transactions, categories, creditCards, tags } = useFinance();
 
   const now = new Date();
@@ -276,7 +277,7 @@ const Dashboard = () => {
         <div className="flex items-center justify-between px-2">
           <h3 className="text-slate-800 font-bold text-sm uppercase tracking-wider">Transações Recentes</h3>
           <button 
-            onClick={() => {}} // This should ideally switch to History tab
+            onClick={onViewAll}
             className="text-black text-xs font-bold flex items-center gap-1 hover:underline"
           >
             Ver tudo <ChevronRight size={14} />
@@ -345,6 +346,7 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
   const [amount, setAmount] = useState(initialData?.amount.toString() || '');
   const [description, setDescription] = useState(initialData?.description || '');
   const [category, setCategory] = useState(initialData?.category || categories.filter(c => c.type === 'expense')[0]?.name || '');
+  const [selectedAccountId, setSelectedAccountId] = useState(initialData?.accountId || accounts[0]?.id || '1');
   const [selectedTags, setSelectedTags] = useState<string[]>(initialData?.tags || []);
   const [creditCardId, setCreditCardId] = useState<string>(initialData?.creditCardId || '');
   const [date, setDate] = useState(initialData ? format(parseISO(initialData.date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));
@@ -369,7 +371,7 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
       description,
       type,
       category,
-      accountId: initialData?.accountId || accounts[0]?.id || '1',
+      accountId: selectedAccountId,
       date: transactionDate.toISOString(),
       tags: selectedTags,
       creditCardId: creditCardId || undefined
@@ -499,14 +501,27 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Data Vencimento</label>
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none"
-                />
+                <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Conta</label>
+                <select
+                  value={selectedAccountId}
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none appearance-none"
+                >
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                  ))}
+                </select>
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Data Vencimento</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none"
+              />
             </div>
 
             {type === 'expense' && (
@@ -992,6 +1007,165 @@ const CreditCardManager = () => {
                 className="w-full py-5 bg-black text-white rounded-[1.5rem] font-bold text-base shadow-xl active:scale-95 transition-all"
               >
                 {isEditing ? 'Salvar Alterações' : 'Cadastrar Cartão'}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const AccountManager = () => {
+  const { accounts, addAccount, updateAccount, deleteAccount } = useFinance();
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState({ name: '', balance: 0, color: '#000000', icon: 'Wallet' });
+
+  const handleSave = () => {
+    if (!formData.name) return;
+    if (editingId) {
+      updateAccount(editingId, formData);
+    } else {
+      addAccount(formData);
+    }
+    setIsAdding(false);
+    setEditingId(null);
+    setFormData({ name: '', balance: 0, color: '#000000', icon: 'Wallet' });
+  };
+
+  const startEdit = (acc: any) => {
+    setEditingId(acc.id);
+    setFormData({ name: acc.name, balance: acc.balance, color: acc.color, icon: acc.icon });
+    setIsAdding(true);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between px-2">
+        <h3 className="text-slate-800 font-bold text-sm">Minhas Contas</h3>
+        <button 
+          onClick={() => setIsAdding(true)}
+          className="w-8 h-8 bg-black text-white rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform"
+        >
+          <Plus size={18} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        {accounts.map(acc => (
+          <div key={acc.id} className="bg-white p-5 rounded-[2rem] flex items-center justify-between card-shadow border border-slate-50">
+            <div className="flex items-center gap-4">
+              <div 
+                className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-sm"
+                style={{ backgroundColor: acc.color }}
+              >
+                <CategoryIcon icon={acc.icon} size={22} />
+              </div>
+              <div>
+                <p className="font-bold text-slate-800 text-sm">{acc.name}</p>
+                <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">{formatCurrency(acc.balance)}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => startEdit(acc)}
+                className="w-10 h-10 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center hover:text-black transition-colors"
+              >
+                <Edit2 size={18} />
+              </button>
+              <button 
+                onClick={() => { if(confirm('Excluir esta conta?')) deleteAccount(acc.id); }}
+                className="w-10 h-10 bg-rose-50 text-rose-400 rounded-xl flex items-center justify-center hover:text-rose-600 transition-colors"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <AnimatePresence>
+        {isAdding && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] bg-slate-900/40 backdrop-blur-md flex items-end sm:items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ y: 100, scale: 0.95 }}
+              animate={{ y: 0, scale: 1 }}
+              exit={{ y: 100, scale: 0.95 }}
+              className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800">{editingId ? 'Editar Conta' : 'Nova Conta'}</h2>
+                  <p className="text-xs text-slate-400">Configure os detalhes da sua conta bancária</p>
+                </div>
+                <button 
+                  onClick={() => { setIsAdding(false); setEditingId(null); }} 
+                  className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:text-black transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Nome da Conta</label>
+                  <input 
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Ex: Nubank, Itaú, Carteira..."
+                    className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Saldo Inicial</label>
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={formData.balance}
+                    onChange={(e) => setFormData({ ...formData, balance: parseFloat(e.target.value) || 0 })}
+                    className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Cor</label>
+                    <input 
+                      type="color"
+                      value={formData.color}
+                      onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                      className="w-full h-14 bg-slate-100/50 border-none rounded-2xl p-1 focus:ring-2 focus:ring-black outline-none cursor-pointer"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Ícone</label>
+                    <select 
+                      value={formData.icon}
+                      onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+                      className="w-full h-14 bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none appearance-none"
+                    >
+                      <option value="Wallet">Carteira</option>
+                      <option value="Banknote">Banco</option>
+                      <option value="TrendingUp">Investimento</option>
+                      <option value="Briefcase">Trabalho</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleSave}
+                className="w-full py-5 bg-black text-white rounded-[1.5rem] font-bold text-base shadow-xl active:scale-95 transition-all"
+              >
+                {editingId ? 'Salvar Alterações' : 'Criar Conta'}
               </button>
             </motion.div>
           </motion.div>
@@ -1775,20 +1949,38 @@ const ChartsTab = () => {
 
 const HistoryTab = ({ onEdit }: { onEdit: (t: Transaction) => void }) => {
   const { transactions, categories, tags, creditCards, deleteTransaction } = useFinance();
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const sortedTransactions = [...transactions].sort((a, b) => 
-    new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(t => 
+      t.description.toLowerCase().includes(searchQuery.toLowerCase())
+    ).sort((a, b) => 
+      new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  }, [transactions, searchQuery]);
 
   return (
     <div className="pt-12 pb-24 lg:pb-0 space-y-8">
-      <div className="mb-8 px-2">
-        <h2 className="text-3xl lg:text-4xl font-black text-slate-800 tracking-tight">Histórico</h2>
-        <p className="text-slate-400 text-sm mt-1 font-medium">Todas as suas movimentações</p>
+      <div className="mb-8 px-2 flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+          <h2 className="text-3xl lg:text-4xl font-black text-slate-800 tracking-tight">Histórico</h2>
+          <p className="text-slate-400 text-sm mt-1 font-medium">Todas as suas movimentações</p>
+        </div>
+        
+        <div className="relative w-full md:w-72">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+          <input 
+            type="text"
+            placeholder="Buscar por descrição..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-white border-none rounded-2xl py-4 pl-12 pr-4 text-sm font-medium text-slate-800 placeholder:text-slate-400 card-shadow focus:ring-2 focus:ring-black outline-none transition-all"
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {sortedTransactions.length === 0 ? (
+        {filteredTransactions.length === 0 ? (
           <div className="lg:col-span-2 bg-white p-12 rounded-[3rem] text-center card-shadow border border-slate-50">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200 mb-4">
               <History size={32} />
@@ -1796,7 +1988,7 @@ const HistoryTab = ({ onEdit }: { onEdit: (t: Transaction) => void }) => {
             <p className="text-slate-400 text-sm font-medium">Nenhuma transação encontrada.</p>
           </div>
         ) : (
-          sortedTransactions.map((t) => {
+          filteredTransactions.map((t) => {
             const categoryObj = categories.find(c => c.name === t.category);
             const card = creditCards.find(c => c.id === t.creditCardId);
             const transactionTags = tags.filter(tag => t.tags?.includes(tag.id));
@@ -1881,6 +2073,7 @@ const SettingsTab = () => {
     {
       title: 'Financeiro',
       items: [
+        { id: 'accounts', label: 'Contas Bancárias', description: 'Gerencie suas contas e saldos', icon: Wallet, color: 'bg-slate-100 text-slate-600' },
         { id: 'cards', label: 'Cartões de Crédito', description: 'Cadastre e edite seus cartões', icon: CreditCardIcon, color: 'bg-slate-100 text-slate-600' },
         { id: 'reports', label: 'Relatórios', description: 'Exporte seus dados em PDF ou CSV', icon: History, color: 'bg-slate-100 text-slate-600' },
       ]
@@ -1932,6 +2125,7 @@ const SettingsTab = () => {
           )}
 
           {activeSubTab === 'categories' && <CategoryManager />}
+          {activeSubTab === 'accounts' && <AccountManager />}
           {activeSubTab === 'users' && <UserManager />}
           {activeSubTab === 'cards' && <CreditCardManager />}
           {activeSubTab === 'reports' && <ReportGenerator />}
@@ -1947,10 +2141,10 @@ const SettingsTab = () => {
                 </div>
                 <div className="pt-4 border-t border-slate-50">
                   <button 
-                    onClick={() => { if(confirm('Tem certeza que deseja apagar todos os dados?')) { localStorage.clear(); window.location.reload(); } }} 
-                    className="w-full py-4 rounded-2xl bg-rose-50 text-rose-500 font-bold text-sm active:scale-95 transition-transform"
+                    onClick={() => auth.signOut()} 
+                    className="w-full py-4 rounded-2xl bg-slate-50 text-slate-400 font-bold text-sm active:scale-95 transition-transform"
                   >
-                    Limpar todos os dados
+                    Sair da Conta
                   </button>
                 </div>
               </div>
@@ -2096,12 +2290,26 @@ const Sidebar = ({ activeTab, setActiveTab, setIsAdding }: { activeTab: string, 
 const AppContent = () => {
   const { user } = useFinance();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [tabKeys, setTabKeys] = useState<Record<string, number>>({
+    dashboard: 0,
+    transactions: 0,
+    charts: 0,
+    settings: 0
+  });
   const [isAdding, setIsAdding] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   if (!user) {
     return <LoginPage />;
   }
+
+  const handleTabChange = (tab: string) => {
+    if (activeTab === tab) {
+      setTabKeys(prev => ({ ...prev, [tab]: prev[tab] + 1 }));
+    } else {
+      setActiveTab(tab);
+    }
+  };
 
   const handleEdit = (t: Transaction) => {
     setEditingTransaction(t);
@@ -2115,22 +2323,22 @@ const AppContent = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} setIsAdding={setIsAdding} />
+      <Sidebar activeTab={activeTab} setActiveTab={handleTabChange} setIsAdding={setIsAdding} />
 
       <main className="flex-1 relative overflow-x-hidden">
         <div className="max-w-md mx-auto lg:max-w-4xl lg:px-8 lg:py-12 min-h-screen">
           <div className="px-4 lg:px-0">
-            {activeTab === 'dashboard' && <Dashboard />}
-            {activeTab === 'transactions' && <HistoryTab onEdit={handleEdit} />}
-            {activeTab === 'charts' && <ChartsTab />}
-            {activeTab === 'settings' && <SettingsTab />}
+            {activeTab === 'dashboard' && <div key={tabKeys.dashboard}><Dashboard onViewAll={() => handleTabChange('transactions')} /></div>}
+            {activeTab === 'transactions' && <div key={tabKeys.transactions}><HistoryTab onEdit={handleEdit} /></div>}
+            {activeTab === 'charts' && <div key={tabKeys.charts}><ChartsTab /></div>}
+            {activeTab === 'settings' && <div key={tabKeys.settings}><SettingsTab /></div>}
           </div>
         </div>
 
         {/* Bottom Navigation (Mobile Only) */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/80 backdrop-blur-xl border-t border-slate-100 px-8 py-4 flex items-center justify-between z-40">
           <button 
-            onClick={() => setActiveTab('dashboard')}
+            onClick={() => handleTabChange('dashboard')}
             className={cn("flex flex-col items-center gap-1", activeTab === 'dashboard' ? "text-black" : "text-slate-400")}
           >
             <LayoutDashboard size={24} />
@@ -2138,7 +2346,7 @@ const AppContent = () => {
           </button>
           
           <button 
-            onClick={() => setActiveTab('transactions')}
+            onClick={() => handleTabChange('transactions')}
             className={cn("flex flex-col items-center gap-1", activeTab === 'transactions' ? "text-black" : "text-slate-400")}
           >
             <History size={24} />
@@ -2155,7 +2363,7 @@ const AppContent = () => {
           </div>
 
           <button 
-            onClick={() => setActiveTab('charts')}
+            onClick={() => handleTabChange('charts')}
             className={cn("flex flex-col items-center gap-1", activeTab === 'charts' ? "text-black" : "text-slate-400")}
           >
             <PieChart size={24} />
@@ -2163,7 +2371,7 @@ const AppContent = () => {
           </button>
 
           <button 
-            onClick={() => setActiveTab('settings')}
+            onClick={() => handleTabChange('settings')}
             className={cn("flex flex-col items-center gap-1", activeTab === 'settings' ? "text-black" : "text-slate-400")}
           >
             <Settings size={24} />

@@ -26,6 +26,9 @@ interface FinanceContextType {
   addTag: (t: Omit<Tag, 'id'>) => void;
   updateTag: (id: string, updates: Partial<Tag>) => void;
   deleteTag: (id: string) => void;
+  addAccount: (a: Omit<Account, 'id'>) => void;
+  updateAccount: (id: string, updates: Partial<Account>) => void;
+  deleteAccount: (id: string) => void;
   updateNotificationSettings: (updates: Partial<NotificationSettings>) => void;
   importTransactions: (data: Transaction[]) => void;
   totalBalance: number;
@@ -57,14 +60,11 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => unsubscribe();
   }, []);
 
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => {
-    const saved = localStorage.getItem('ff_notifications');
-    return saved ? JSON.parse(saved) : {
-      cardDueReminders: true,
-      transactionReminders: true,
-      reminderTime: '09:00',
-      daysBeforeDue: 2
-    };
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
+    cardDueReminders: true,
+    transactionReminders: true,
+    reminderTime: '09:00',
+    daysBeforeDue: 2
   });
 
   // Load initial data from API
@@ -79,12 +79,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           'x-is-admin': user.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
         };
 
-        const [tRes, aRes, cRes, ccRes, tagRes] = await Promise.all([
+        const [tRes, aRes, cRes, ccRes, tagRes, nRes] = await Promise.all([
           fetch('/api/transactions', { headers }),
           fetch('/api/accounts', { headers }),
           fetch('/api/categories', { headers }),
           fetch('/api/credit-cards', { headers }),
-          fetch('/api/tags', { headers })
+          fetch('/api/tags', { headers }),
+          fetch('/api/notifications', { headers })
         ]);
 
         if (tRes.ok) setTransactions(await tRes.json());
@@ -92,6 +93,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (cRes.ok) setCategories(await cRes.json());
         if (ccRes.ok) setCreditCards(await ccRes.json());
         if (tagRes.ok) setTags(await tagRes.json());
+        if (nRes.ok) setNotificationSettings(await nRes.json());
         setError(null);
       } catch (error: any) {
         console.error("Failed to load data from API:", error);
@@ -102,10 +104,6 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
     loadData();
   }, [user]);
-
-  useEffect(() => {
-    localStorage.setItem('ff_notifications', JSON.stringify(notificationSettings));
-  }, [notificationSettings]);
 
   const addCategory = async (c: Omit<Category, 'id'>) => {
     const newCategory = { ...c, id: Math.random().toString(36).substr(2, 9) };
@@ -125,46 +123,228 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   };
 
-  const updateCategory = (id: string, updates: Partial<Category>) => {
+  const updateCategory = async (id: string, updates: Partial<Category>) => {
     setCategories(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    try {
+      await fetch(`/api/categories/${id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify(updates)
+      });
+    } catch (err) {
+      console.error("Error updating category:", err);
+    }
   };
 
-  const deleteCategory = (id: string) => {
+  const deleteCategory = async (id: string) => {
     setCategories(prev => prev.filter(c => c.id !== id));
+    try {
+      await fetch(`/api/categories/${id}`, {
+        method: 'DELETE',
+        headers: { 
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        }
+      });
+    } catch (err) {
+      console.error("Error deleting category:", err);
+    }
   };
 
-  const addCreditCard = (c: Omit<CreditCard, 'id'>) => {
+  const addCreditCard = async (c: Omit<CreditCard, 'id'>) => {
     const newCard = { ...c, id: Math.random().toString(36).substr(2, 9) };
     setCreditCards(prev => [...prev, newCard]);
+    try {
+      await fetch('/api/credit-cards', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify(newCard)
+      });
+    } catch (err) {
+      console.error("Error adding credit card:", err);
+    }
   };
 
-  const updateCreditCard = (id: string, updates: Partial<CreditCard>) => {
+  const updateCreditCard = async (id: string, updates: Partial<CreditCard>) => {
     setCreditCards(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    try {
+      await fetch(`/api/credit-cards/${id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify(updates)
+      });
+    } catch (err) {
+      console.error("Error updating credit card:", err);
+    }
   };
 
-  const deleteCreditCard = (id: string) => {
+  const deleteCreditCard = async (id: string) => {
     setCreditCards(prev => prev.filter(c => c.id !== id));
+    try {
+      await fetch(`/api/credit-cards/${id}`, {
+        method: 'DELETE',
+        headers: { 
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        }
+      });
+    } catch (err) {
+      console.error("Error deleting credit card:", err);
+    }
   };
 
-  const addTag = (t: Omit<Tag, 'id'>) => {
+  const addTag = async (t: Omit<Tag, 'id'>) => {
     const newTag = { ...t, id: Math.random().toString(36).substr(2, 9) };
     setTags(prev => [...prev, newTag]);
+    try {
+      await fetch('/api/tags', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify(newTag)
+      });
+    } catch (err) {
+      console.error("Error adding tag:", err);
+    }
   };
 
-  const updateTag = (id: string, updates: Partial<Tag>) => {
+  const updateTag = async (id: string, updates: Partial<Tag>) => {
     setTags(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    try {
+      await fetch(`/api/tags/${id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify(updates)
+      });
+    } catch (err) {
+      console.error("Error updating tag:", err);
+    }
   };
 
-  const deleteTag = (id: string) => {
+  const deleteTag = async (id: string) => {
     setTags(prev => prev.filter(t => t.id !== id));
+    try {
+      await fetch(`/api/tags/${id}`, {
+        method: 'DELETE',
+        headers: { 
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        }
+      });
+    } catch (err) {
+      console.error("Error deleting tag:", err);
+    }
   };
 
-  const updateNotificationSettings = (updates: Partial<NotificationSettings>) => {
-    setNotificationSettings(prev => ({ ...prev, ...updates }));
+  const addAccount = async (a: Omit<Account, 'id'>) => {
+    const newAccount = { ...a, id: Math.random().toString(36).substr(2, 9) };
+    setAccounts(prev => [...prev, newAccount]);
+    try {
+      await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify(newAccount)
+      });
+    } catch (err) {
+      console.error("Error adding account:", err);
+    }
   };
 
-  const importTransactions = (data: Transaction[]) => {
+  const updateAccount = async (id: string, updates: Partial<Account>) => {
+    setAccounts(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+    try {
+      await fetch(`/api/accounts/${id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify(updates)
+      });
+    } catch (err) {
+      console.error("Error updating account:", err);
+    }
+  };
+
+  const deleteAccount = async (id: string) => {
+    if (accounts.length <= 1) {
+      alert("Você deve ter pelo menos uma conta.");
+      return;
+    }
+    setAccounts(prev => prev.filter(a => a.id !== id));
+    try {
+      await fetch(`/api/accounts/${id}`, {
+        method: 'DELETE',
+        headers: { 
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        }
+      });
+    } catch (err) {
+      console.error("Error deleting account:", err);
+    }
+  };
+
+  const updateNotificationSettings = async (updates: Partial<NotificationSettings>) => {
+    const newSettings = { ...notificationSettings, ...updates };
+    setNotificationSettings(newSettings);
+    try {
+      await fetch('/api/notifications', {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify(newSettings)
+      });
+    } catch (err) {
+      console.error("Error updating notification settings:", err);
+    }
+  };
+
+  const importTransactions = async (data: Transaction[]) => {
     setTransactions(prev => [...data, ...prev]);
+    // Save all imported transactions to API
+    try {
+      for (const t of data) {
+        await fetch('/api/transactions', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-user-id': user?.uid || '',
+            'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+          },
+          body: JSON.stringify(t)
+        });
+      }
+    } catch (err) {
+      console.error("Error importing transactions:", err);
+    }
   };
 
   const addTransaction = async (t: Omit<Transaction, 'id'>) => {
@@ -184,7 +364,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
           },
           body: JSON.stringify({ balance: newBalance })
-        });
+        }).catch(err => console.error("Error syncing account balance:", err));
         return { ...acc, balance: newBalance };
       }
       return acc;
@@ -250,7 +430,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
             },
             body: JSON.stringify({ balance })
-          });
+          }).catch(err => console.error("Error syncing account balance:", err));
         }
         
         return { ...acc, balance };
@@ -290,10 +470,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           headers: { 
             'Content-Type': 'application/json',
             'x-user-id': user?.uid || '',
-            'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+            'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
           },
           body: JSON.stringify({ balance: newBalance })
-        });
+        }).catch(err => console.error("Error syncing account balance:", err));
         return { ...acc, balance: newBalance };
       }
       return acc;
@@ -404,6 +584,9 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       addTag,
       updateTag,
       deleteTag,
+      addAccount,
+      updateAccount,
+      deleteAccount,
       updateNotificationSettings,
       importTransactions,
       updateTransaction,
