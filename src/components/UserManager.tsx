@@ -121,7 +121,7 @@ export const UserManager = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-black transition-all"
+              className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl text-base font-bold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-black transition-all"
             />
           </div>
           <div className="relative">
@@ -132,7 +132,7 @@ export const UserManager = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl text-sm font-bold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-black transition-all"
+              className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl text-base font-bold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-black transition-all"
             />
           </div>
         </div>

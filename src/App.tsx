@@ -481,7 +481,7 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Ex: Aluguel, Supermercado..."
-                className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-black outline-none transition-all"
+                className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none transition-all"
               />
             </div>
 
@@ -491,7 +491,7 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-black outline-none appearance-none"
+                  className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none appearance-none"
                 >
                   {categories.filter(c => c.type === type).map(c => (
                     <option key={c.id} value={c.name}>{c.name}</option>
@@ -504,7 +504,7 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-black outline-none"
+                  className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none"
                 />
               </div>
             </div>
@@ -515,7 +515,7 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
                 <select
                   value={creditCardId}
                   onChange={(e) => setCreditCardId(e.target.value)}
-                  className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-black outline-none appearance-none"
+                  className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none appearance-none"
                 >
                   <option value="">Nenhum cartão</option>
                   {creditCards.map(card => (
@@ -700,7 +700,7 @@ const CategoryManager = () => {
                     placeholder="Ex: Alimentação, Salário..."
                     value={formData.name}
                     onChange={e => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-black outline-none transition-all"
+                    className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none transition-all"
                   />
                 </div>
 
@@ -766,7 +766,7 @@ const CategoryManager = () => {
                         placeholder="Cole um emoji aqui..."
                         value={availableIcons.includes(formData.icon) ? "" : formData.icon}
                         onChange={(e) => setFormData({ ...formData, icon: e.target.value || 'Wallet' })}
-                        className="flex-1 bg-transparent border-none text-sm focus:ring-0 outline-none p-0"
+                        className="flex-1 bg-transparent border-none text-base focus:ring-0 outline-none p-0"
                         maxLength={2}
                       />
                     </div>
@@ -908,7 +908,7 @@ const CreditCardManager = () => {
                     placeholder="Ex: Cartão Principal" 
                     value={formData.name} 
                     onChange={e => setFormData({ ...formData, name: e.target.value })} 
-                    className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-black outline-none transition-all" 
+                    className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none transition-all" 
                   />
                 </div>
 
@@ -920,7 +920,7 @@ const CreditCardManager = () => {
                       placeholder="Ex: Nubank" 
                       value={formData.bank} 
                       onChange={e => setFormData({ ...formData, bank: e.target.value })} 
-                      className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-black outline-none transition-all" 
+                      className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none transition-all" 
                     />
                   </div>
                   <div className="space-y-1">
@@ -928,7 +928,7 @@ const CreditCardManager = () => {
                     <select 
                       value={formData.brand} 
                       onChange={e => setFormData({ ...formData, brand: e.target.value })} 
-                      className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-black outline-none appearance-none transition-all"
+                      className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none appearance-none transition-all"
                     >
                       {brands.map(b => <option key={b} value={b}>{b}</option>)}
                     </select>
@@ -942,7 +942,7 @@ const CreditCardManager = () => {
                     placeholder="0,00" 
                     value={formData.limit || ''} 
                     onChange={e => setFormData({ ...formData, limit: parseFloat(e.target.value) || 0 })} 
-                    className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-black outline-none transition-all" 
+                    className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base font-bold focus:ring-2 focus:ring-black outline-none transition-all" 
                   />
                 </div>
 
@@ -954,7 +954,7 @@ const CreditCardManager = () => {
                       min="1" max="31"
                       value={formData.closingDay} 
                       onChange={e => setFormData({ ...formData, closingDay: parseInt(e.target.value) || 1 })} 
-                      className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-black outline-none transition-all" 
+                      className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none transition-all" 
                     />
                   </div>
                   <div className="space-y-1">
@@ -964,7 +964,7 @@ const CreditCardManager = () => {
                       min="1" max="31"
                       value={formData.dueDay} 
                       onChange={e => setFormData({ ...formData, dueDay: parseInt(e.target.value) || 1 })} 
-                      className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-black outline-none transition-all" 
+                      className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none transition-all" 
                     />
                   </div>
                 </div>
@@ -1101,7 +1101,7 @@ const TagManager = () => {
                     placeholder="Ex: Viagem, Presente..." 
                     value={formData.name} 
                     onChange={e => setFormData({ ...formData, name: e.target.value })} 
-                    className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-sm focus:ring-2 focus:ring-black outline-none transition-all" 
+                    className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none transition-all" 
                   />
                 </div>
 
@@ -1263,7 +1263,7 @@ const MoreOptions = () => {
                 type="time" 
                 value={notificationSettings.reminderTime}
                 onChange={(e) => updateNotificationSettings({ reminderTime: e.target.value })}
-                className="bg-slate-100 border-none rounded-lg px-3 py-1 text-xs font-bold outline-none focus:ring-1 focus:ring-black"
+                className="bg-slate-100 border-none rounded-lg px-3 py-1 text-base font-bold outline-none focus:ring-1 focus:ring-black"
               />
             </div>
           </div>
@@ -1387,7 +1387,7 @@ const ReportGenerator = () => {
               type="date" 
               value={startDate} 
               onChange={e => setStartDate(e.target.value)}
-              className="w-full bg-slate-50 border-none rounded-xl p-3 text-xs focus:ring-2 focus:ring-black outline-none"
+              className="w-full bg-slate-50 border-none rounded-xl p-3 text-base focus:ring-2 focus:ring-black outline-none"
             />
           </div>
           <div className="space-y-1">
@@ -1396,7 +1396,7 @@ const ReportGenerator = () => {
               type="date" 
               value={endDate} 
               onChange={e => setEndDate(e.target.value)}
-              className="w-full bg-slate-50 border-none rounded-xl p-3 text-xs focus:ring-2 focus:ring-black outline-none"
+              className="w-full bg-slate-50 border-none rounded-xl p-3 text-base focus:ring-2 focus:ring-black outline-none"
             />
           </div>
         </div>
@@ -1406,7 +1406,7 @@ const ReportGenerator = () => {
           <select 
             value={selectedCategory} 
             onChange={e => setSelectedCategory(e.target.value)}
-            className="w-full bg-slate-50 border-none rounded-xl p-3 text-xs focus:ring-2 focus:ring-black outline-none appearance-none"
+            className="w-full bg-slate-50 border-none rounded-xl p-3 text-base focus:ring-2 focus:ring-black outline-none appearance-none"
           >
             <option value="all">Todas as Categorias</option>
             {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
@@ -1418,7 +1418,7 @@ const ReportGenerator = () => {
           <select 
             value={selectedTag} 
             onChange={e => setSelectedTag(e.target.value)}
-            className="w-full bg-slate-50 border-none rounded-xl p-3 text-xs focus:ring-2 focus:ring-black outline-none appearance-none"
+            className="w-full bg-slate-50 border-none rounded-xl p-3 text-base focus:ring-2 focus:ring-black outline-none appearance-none"
           >
             <option value="all">Todas as Tags</option>
             {tags.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}

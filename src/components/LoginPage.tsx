@@ -165,7 +165,7 @@ export const LoginPage = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="w-full pl-12 pr-4 py-4 bg-white border-2 border-transparent rounded-2xl text-sm font-bold text-slate-800 placeholder:text-slate-300 focus:border-black focus:bg-white transition-all outline-none shadow-sm"
+                    className="w-full pl-12 pr-4 py-4 bg-white border-2 border-transparent rounded-2xl text-base font-bold text-slate-800 placeholder:text-slate-300 focus:border-black focus:bg-white transition-all outline-none shadow-sm"
                   />
                 </div>
                 <div className="relative group">
@@ -176,7 +176,7 @@ export const LoginPage = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="w-full pl-12 pr-4 py-4 bg-white border-2 border-transparent rounded-2xl text-sm font-bold text-slate-800 placeholder:text-slate-300 focus:border-black focus:bg-white transition-all outline-none shadow-sm"
+                    className="w-full pl-12 pr-4 py-4 bg-white border-2 border-transparent rounded-2xl text-base font-bold text-slate-800 placeholder:text-slate-300 focus:border-black focus:bg-white transition-all outline-none shadow-sm"
                   />
                 </div>
               </div>
