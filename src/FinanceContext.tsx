@@ -110,15 +110,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const addCategory = async (c: Omit<Category, 'id'>) => {
     const newCategory = { ...c, id: Math.random().toString(36).substr(2, 9) };
     setCategories(prev => [...prev, newCategory]);
-    await fetch('/api/categories', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-user-id': user?.uid || '',
-        'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
-      },
-      body: JSON.stringify(newCategory)
-    });
+    try {
+      await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify(newCategory)
+      });
+    } catch (err) {
+      console.error("Error adding category:", err);
+    }
   };
 
   const updateCategory = (id: string, updates: Partial<Category>) => {
@@ -177,7 +181,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           headers: { 
             'Content-Type': 'application/json',
             'x-user-id': user?.uid || '',
-            'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+            'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
           },
           body: JSON.stringify({ balance: newBalance })
         });
@@ -188,15 +192,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setAccounts(updatedAccounts);
 
     // Save transaction to API
-    await fetch('/api/transactions', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-user-id': user?.uid || '',
-        'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
-      },
-      body: JSON.stringify(newTransaction)
-    });
+    try {
+      const response = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify(newTransaction)
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || 'Falha na comunicação com o servidor');
+      }
+    } catch (err: any) {
+      console.error("Error saving transaction:", err);
+      alert(`⚠️ Erro ao salvar transação: ${err.message}. Verifique se o banco de dados está configurado na Vercel.`);
+    }
   };
 
   const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
@@ -234,7 +247,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
             headers: { 
               'Content-Type': 'application/json',
               'x-user-id': user?.uid || '',
-              'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
+              'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
             },
             body: JSON.stringify({ balance })
           });
@@ -246,15 +259,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     // Save update to API
-    await fetch(`/api/transactions/${id}`, {
-      method: 'PUT',
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-user-id': user?.uid || '',
-        'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
-      },
-      body: JSON.stringify(newT)
-    });
+    try {
+      const response = await fetch(`/api/transactions/${id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify(newT)
+      });
+      if (!response.ok) throw new Error('Failed to update transaction');
+    } catch (err) {
+      console.error("Error updating transaction:", err);
+    }
   };
 
   const deleteTransaction = async (id: string) => {
@@ -283,13 +301,18 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setAccounts(updatedAccounts);
 
     // Delete from API
-    await fetch(`/api/transactions/${id}`, {
-      method: 'DELETE',
-      headers: { 
-        'x-user-id': user?.uid || '',
-        'x-is-admin': user?.email === 'admin@meufinanceiro.com' ? 'true' : 'false'
-      }
-    });
+    try {
+      const response = await fetch(`/api/transactions/${id}`, {
+        method: 'DELETE',
+        headers: { 
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        }
+      });
+      if (!response.ok) throw new Error('Failed to delete transaction');
+    } catch (err) {
+      console.error("Error deleting transaction:", err);
+    }
   };
 
   const totalBalance = accounts.reduce((acc, curr) => acc + curr.balance, 0);
