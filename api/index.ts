@@ -361,4 +361,9 @@ app.delete("/api/tags/:id", async (req, res) => {
   } catch (e: any) { res.status(500).json({ error: e.message || e }); }
 });
 
+// 404 handler for API routes
+app.all("/api/*", (req, res) => {
+  res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
+});
+
 export default app;

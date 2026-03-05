@@ -392,6 +392,11 @@ async function startServer() {
     } catch (e) { res.status(500).json({ error: e }); }
   });
 
+  // 404 handler for API routes
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

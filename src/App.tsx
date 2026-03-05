@@ -152,6 +152,15 @@ const Dashboard = ({ onViewAll }: { onViewAll: () => void }) => {
             )}>
               {formatCurrency(totalBalance)}
             </h2>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Saldo do Mês:</span>
+              <span className={cn(
+                "text-xs font-black",
+                (monthlyIncome - monthlyExpense) >= 0 ? "text-emerald-400" : "text-rose-400"
+              )}>
+                {formatCurrency(monthlyIncome - monthlyExpense)}
+              </span>
+            </div>
           </div>
           <div className="text-right">
             <p className="text-slate-400 text-[10px] lg:text-xs font-bold uppercase tracking-widest">{currentMonthName}</p>
@@ -537,6 +546,11 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
                     <option key={card.id} value={card.id}>{card.name} - {card.bank}</option>
                   ))}
                 </select>
+                {creditCardId && (
+                  <p className="text-[9px] text-amber-500 font-bold uppercase tracking-tighter px-1 mt-1">
+                    ⚠️ Esta despesa será registrada na fatura do cartão e não afetará o saldo da conta bancária.
+                  </p>
+                )}
               </div>
             )}
 
@@ -804,7 +818,7 @@ const CategoryManager = () => {
 };
 
 const CreditCardManager = () => {
-  const { creditCards, addCreditCard, updateCreditCard, deleteCreditCard } = useFinance();
+  const { creditCards, addCreditCard, updateCreditCard, deleteCreditCard, accounts } = useFinance();
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [formData, setFormData] = useState({ name: '', brand: 'Visa', bank: '', limit: 0, closingDay: 1, dueDay: 10, color: '#000000' });
@@ -929,13 +943,21 @@ const CreditCardManager = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Banco</label>
-                    <input 
-                      type="text" 
-                      placeholder="Ex: Nubank" 
+                    <select 
                       value={formData.bank} 
                       onChange={e => setFormData({ ...formData, bank: e.target.value })} 
-                      className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none transition-all" 
-                    />
+                      className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none appearance-none transition-all"
+                    >
+                      <option value="">Selecione o banco</option>
+                      {accounts.map(acc => (
+                        <option key={acc.id} value={acc.name}>{acc.name}</option>
+                      ))}
+                    </select>
+                    {accounts.length === 0 && (
+                      <p className="text-[9px] text-rose-500 font-bold uppercase tracking-tighter px-1 mt-1">
+                        ⚠️ Crie uma conta bancária primeiro.
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Bandeira</label>

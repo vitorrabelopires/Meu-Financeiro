@@ -107,11 +107,14 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         clearTimeout(timeoutId);
 
         const parseJson = async (res: Response) => {
+          const text = await res.text();
+          const isHtml = text.trim().toLowerCase().startsWith('<!doctype html>') || text.trim().toLowerCase().startsWith('<html');
+          
+          if (isHtml) {
+            throw new Error(`O servidor retornou uma página HTML em vez de dados (Status: ${res.status}). Isso geralmente acontece quando o banco de dados não está configurado na Vercel ou a rota da API falhou.`);
+          }
+
           if (!res.ok) {
-            const text = await res.text();
-            if (text.includes('<!doctype html>') || text.includes('<html>')) {
-              throw new Error(`O servidor retornou uma página HTML em vez de dados (Status: ${res.status}). Isso geralmente acontece quando o banco de dados não está configurado na Vercel.`);
-            }
             try {
               const json = JSON.parse(text);
               throw new Error(json.error || `Erro na API: ${res.status}`);
@@ -119,7 +122,13 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
               throw new Error(`Erro na API: ${res.status}`);
             }
           }
-          return res.json();
+
+          try {
+            return JSON.parse(text);
+          } catch (e) {
+            console.error("JSON parse error:", e, "Raw text:", text.substring(0, 100));
+            throw new Error("O servidor retornou um formato de dados inválido.");
+          }
         };
 
         setTransactions(await parseJson(tRes));
@@ -368,6 +377,35 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const importTransactions = async (data: Transaction[]) => {
     setTransactions(prev => [...data, ...prev]);
+    
+    // Update account balances based on imported transactions
+    const updatedAccounts = [...accounts];
+    for (const t of data) {
+      // Skip balance update for credit card transactions
+      if (t.creditCardId) continue;
+
+      const accIndex = updatedAccounts.findIndex(a => a.id === t.accountId);
+      if (accIndex !== -1) {
+        const acc = updatedAccounts[accIndex];
+        const newBalance = t.type === 'income' ? acc.balance + t.amount : acc.balance - t.amount;
+        updatedAccounts[accIndex] = { ...acc, balance: newBalance };
+      }
+    }
+    setAccounts(updatedAccounts);
+
+    // Sync all updated accounts to API
+    for (const acc of updatedAccounts) {
+      fetch(`/api/accounts/${acc.id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify({ balance: acc.balance })
+      }).catch(err => console.error("Error syncing account balance during import:", err));
+    }
+
     // Save all imported transactions to API
     try {
       for (const t of data) {
@@ -390,25 +428,27 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const newTransaction = { ...t, id: Math.random().toString(36).substr(2, 9) };
     setTransactions(prev => [newTransaction, ...prev]);
 
-    // Update account balance locally
-    const updatedAccounts = accounts.map(acc => {
-      if (acc.id === t.accountId) {
-        const newBalance = t.type === 'income' ? acc.balance + t.amount : acc.balance - t.amount;
-        // Sync balance to API
-        fetch(`/api/accounts/${acc.id}`, {
-          method: 'PUT',
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-user-id': user?.uid || '',
-            'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
-          },
-          body: JSON.stringify({ balance: newBalance })
-        }).catch(err => console.error("Error syncing account balance:", err));
-        return { ...acc, balance: newBalance };
-      }
-      return acc;
-    });
-    setAccounts(updatedAccounts);
+    // Update account balance locally (only if not a credit card transaction)
+    if (!t.creditCardId) {
+      const updatedAccounts = accounts.map(acc => {
+        if (acc.id === t.accountId) {
+          const newBalance = t.type === 'income' ? acc.balance + t.amount : acc.balance - t.amount;
+          // Sync balance to API
+          fetch(`/api/accounts/${acc.id}`, {
+            method: 'PUT',
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-user-id': user?.uid || '',
+              'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+            },
+            body: JSON.stringify({ balance: newBalance })
+          }).catch(err => console.error("Error syncing account balance:", err));
+          return { ...acc, balance: newBalance };
+        }
+        return acc;
+      });
+      setAccounts(updatedAccounts);
+    }
 
     // Save transaction to API
     try {
@@ -439,23 +479,29 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setTransactions(prev => prev.map(t => t.id === id ? newT : t));
 
     // Update balance if critical fields changed
-    if (updates.amount !== undefined || updates.type !== undefined || updates.accountId !== undefined) {
+    const amountChanged = updates.amount !== undefined && updates.amount !== oldT.amount;
+    const typeChanged = updates.type !== undefined && updates.type !== oldT.type;
+    const accountChanged = updates.accountId !== undefined && updates.accountId !== oldT.accountId;
+    const cardChanged = updates.creditCardId !== undefined && updates.creditCardId !== oldT.creditCardId;
+
+    if (amountChanged || typeChanged || accountChanged || cardChanged) {
       const newAmount = updates.amount ?? oldT.amount;
       const newType = updates.type ?? oldT.type;
       const newAccountId = updates.accountId ?? oldT.accountId;
+      const newCardId = updates.creditCardId ?? oldT.creditCardId;
 
       const updatedAccounts = accounts.map(acc => {
         let balance = acc.balance;
         let changed = false;
         
-        // Revert old
-        if (acc.id === oldT.accountId) {
+        // Revert old (if it wasn't a card transaction)
+        if (!oldT.creditCardId && acc.id === oldT.accountId) {
           balance = oldT.type === 'income' ? balance - oldT.amount : balance + oldT.amount;
           changed = true;
         }
         
-        // Apply new
-        if (acc.id === newAccountId) {
+        // Apply new (if it's not a card transaction)
+        if (!newCardId && acc.id === newAccountId) {
           balance = newType === 'income' ? balance + newAmount : balance - newAmount;
           changed = true;
         }
@@ -500,24 +546,26 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     setTransactions(prev => prev.filter(tx => tx.id !== id));
 
-    // Revert account balance
-    const updatedAccounts = accounts.map(acc => {
-      if (acc.id === t.accountId) {
-        const newBalance = t.type === 'income' ? acc.balance - t.amount : acc.balance + t.amount;
-        fetch(`/api/accounts/${acc.id}`, {
-          method: 'PUT',
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-user-id': user?.uid || '',
-            'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
-          },
-          body: JSON.stringify({ balance: newBalance })
-        }).catch(err => console.error("Error syncing account balance:", err));
-        return { ...acc, balance: newBalance };
-      }
-      return acc;
-    });
-    setAccounts(updatedAccounts);
+    // Revert account balance (only if it wasn't a card transaction)
+    if (!t.creditCardId) {
+      const updatedAccounts = accounts.map(acc => {
+        if (acc.id === t.accountId) {
+          const newBalance = t.type === 'income' ? acc.balance - t.amount : acc.balance + t.amount;
+          fetch(`/api/accounts/${acc.id}`, {
+            method: 'PUT',
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-user-id': user?.uid || '',
+              'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+            },
+            body: JSON.stringify({ balance: newBalance })
+          }).catch(err => console.error("Error syncing account balance:", err));
+          return { ...acc, balance: newBalance };
+        }
+        return acc;
+      });
+      setAccounts(updatedAccounts);
+    }
 
     // Delete from API
     try {
