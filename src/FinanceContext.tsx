@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { Transaction, Account, Category, CreditCard, Tag, NotificationSettings, DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES } from './types';
-import { parseISO, isSameMonth, format } from 'date-fns';
+import { parseISO, isSameMonth, format, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { auth, onAuthStateChanged } from './firebase';
 import { Settings } from 'lucide-react';
@@ -30,11 +30,14 @@ interface FinanceContextType {
   updateAccount: (id: string, updates: Partial<Account>) => void;
   deleteAccount: (id: string) => void;
   updateNotificationSettings: (updates: Partial<NotificationSettings>) => void;
-  importTransactions: (data: Transaction[]) => void;
+  importTransactions: (data: Transaction[]) => Promise<void>;
+  deleteImport: (importId: string) => Promise<void>;
   totalBalance: number;
   monthlyIncome: number;
   monthlyExpense: number;
   currentMonthName: string;
+  successMessage: string | null;
+  setSuccessMessage: (msg: string | null) => void;
 }
 
 const FinanceContext = createContext<FinanceContextType | undefined>(undefined);
@@ -48,6 +51,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Listen for auth state changes
   useEffect(() => {
@@ -94,6 +98,19 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         };
 
         const fetchOptions = { headers, signal: controller.signal };
+
+        // Check DB Status first
+        try {
+          const statusRes = await fetch('/api/db-status', { headers });
+          if (statusRes.ok) {
+            const status = await statusRes.json();
+            if (status.newTables && status.newTables.length > 0) {
+              setSuccessMessage(`⚠️ Algumas tabelas do banco de dados não existiam e foram criadas automaticamente: ${status.newTables.join(', ')}`);
+            }
+          }
+        } catch (e) {
+          console.warn("Could not check DB status", e);
+        }
 
         const [tRes, aRes, cRes, ccRes, tagRes, nRes] = await Promise.all([
           fetch('/api/transactions', fetchOptions),
@@ -376,13 +393,20 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const importTransactions = async (data: Transaction[]) => {
-    setTransactions(prev => [...data, ...prev]);
+    const importId = Math.random().toString(36).substr(2, 9);
+    const importDate = new Date().toISOString();
+    const dataWithImportInfo = data.map(t => ({ ...t, importId, importDate }));
+
+    setTransactions(prev => [...dataWithImportInfo, ...prev]);
     
     // Update account balances based on imported transactions
     const updatedAccounts = [...accounts];
-    for (const t of data) {
+    for (const t of dataWithImportInfo) {
       // Skip balance update for credit card transactions
       if (t.creditCardId) continue;
+      
+      // For installments, only the first one (or non-installment) affects current balance
+      if (t.installmentIndex !== undefined && t.installmentIndex !== 1) continue;
 
       const accIndex = updatedAccounts.findIndex(a => a.id === t.accountId);
       if (accIndex !== -1) {
@@ -394,6 +418,63 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setAccounts(updatedAccounts);
 
     // Sync all updated accounts to API
+    const syncPromises = updatedAccounts.map(acc => 
+      fetch(`/api/accounts/${acc.id}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-user-id': user?.uid || '',
+          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+        },
+        body: JSON.stringify({ balance: acc.balance })
+      }).catch(err => console.error("Error syncing account balance during import:", err))
+    );
+
+    // Save all imported transactions to API in chunks to avoid overwhelming the server
+    const saveTransactions = async () => {
+      try {
+        // Use Promise.all with chunks or just sequential for reliability
+        for (const t of dataWithImportInfo) {
+          await fetch('/api/transactions', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-user-id': user?.uid || '',
+              'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+            },
+            body: JSON.stringify(t)
+          });
+        }
+      } catch (err) {
+        console.error("Error importing transactions:", err);
+      }
+    };
+
+    await Promise.all([...syncPromises, saveTransactions()]);
+    setSuccessMessage(`${data.length} transações importadas com sucesso!`);
+  };
+
+  const deleteImport = async (importId: string) => {
+    const transactionsToDelete = transactions.filter(t => t.importId === importId);
+    if (transactionsToDelete.length === 0) return;
+
+    // Update account balances back
+    const updatedAccounts = [...accounts];
+    for (const t of transactionsToDelete) {
+      if (t.creditCardId) continue;
+      if (t.installmentIndex !== undefined && t.installmentIndex !== 1) continue;
+
+      const accIndex = updatedAccounts.findIndex(a => a.id === t.accountId);
+      if (accIndex !== -1) {
+        const acc = updatedAccounts[accIndex];
+        // Reverse the transaction
+        const newBalance = t.type === 'income' ? acc.balance - t.amount : acc.balance + t.amount;
+        updatedAccounts[accIndex] = { ...acc, balance: newBalance };
+      }
+    }
+    setAccounts(updatedAccounts);
+
+    // Sync accounts
     for (const acc of updatedAccounts) {
       fetch(`/api/accounts/${acc.id}`, {
         method: 'PUT',
@@ -403,36 +484,53 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
           'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
         },
         body: JSON.stringify({ balance: acc.balance })
-      }).catch(err => console.error("Error syncing account balance during import:", err));
+      }).catch(err => console.error("Error syncing account balance during import deletion:", err));
     }
 
-    // Save all imported transactions to API
+    // Delete transactions from API
     try {
-      for (const t of data) {
-        await fetch('/api/transactions', {
-          method: 'POST',
+      for (const t of transactionsToDelete) {
+        await fetch(`/api/transactions/${t.id}`, {
+          method: 'DELETE',
           headers: { 
-            'Content-Type': 'application/json',
             'x-user-id': user?.uid || '',
             'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
-          },
-          body: JSON.stringify(t)
+          }
         });
       }
+      setTransactions(prev => prev.filter(t => t.importId !== importId));
+      setSuccessMessage("Importação excluída com sucesso!");
     } catch (err) {
-      console.error("Error importing transactions:", err);
+      console.error("Error deleting import:", err);
     }
   };
 
   const addTransaction = async (t: Omit<Transaction, 'id'>) => {
-    const newTransaction = { ...t, id: Math.random().toString(36).substr(2, 9) };
-    setTransactions(prev => [newTransaction, ...prev]);
+    const installments = t.installments || 1;
+    const installmentId = installments > 1 ? Math.random().toString(36).substr(2, 9) : undefined;
+    const newTransactions: Transaction[] = [];
+
+    for (let i = 0; i < installments; i++) {
+      const date = i === 0 ? t.date : addMonths(parseISO(t.date), i).toISOString();
+      const newTransaction: Transaction = {
+        ...t,
+        id: Math.random().toString(36).substr(2, 9),
+        date,
+        installmentId,
+        installmentIndex: installments > 1 ? i + 1 : undefined,
+        installments: installments > 1 ? installments : undefined,
+      };
+      newTransactions.push(newTransaction);
+    }
+
+    setTransactions(prev => [...newTransactions, ...prev]);
 
     // Update account balance locally (only if not a credit card transaction)
     if (!t.creditCardId) {
+      const firstT = newTransactions[0];
       const updatedAccounts = accounts.map(acc => {
         if (acc.id === t.accountId) {
-          const newBalance = t.type === 'income' ? acc.balance + t.amount : acc.balance - t.amount;
+          const newBalance = t.type === 'income' ? acc.balance + firstT.amount : acc.balance - firstT.amount;
           // Sync balance to API
           fetch(`/api/accounts/${acc.id}`, {
             method: 'PUT',
@@ -450,23 +548,26 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setAccounts(updatedAccounts);
     }
 
-    // Save transaction to API
+    // Save transactions to API
     try {
-      const response = await fetch('/api/transactions', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-user-id': user?.uid || '',
-          'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
-        },
-        body: JSON.stringify(newTransaction)
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
-        throw new Error(errorData.error || 'Falha na comunicação com o servidor');
+      for (const nt of newTransactions) {
+        const response = await fetch('/api/transactions', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-user-id': user?.uid || '',
+            'x-is-admin': user?.email?.toLowerCase() === 'admin@meufinanceiro.com' ? 'true' : 'false'
+          },
+          body: JSON.stringify(nt)
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+          throw new Error(errorData.error || 'Falha na comunicação com o servidor');
+        }
       }
+      setSuccessMessage("✅ Transação salva com sucesso no banco de dados!");
     } catch (err: any) {
-      console.error("Error saving transaction:", err);
+      console.error("Error saving transactions:", err);
       alert(`⚠️ Erro ao salvar transação: ${err.message}. Verifique se o banco de dados está configurado na Vercel.`);
     }
   };
@@ -535,6 +636,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         body: JSON.stringify(newT)
       });
       if (!response.ok) throw new Error('Failed to update transaction');
+      setSuccessMessage("✅ Transação atualizada com sucesso!");
     } catch (err) {
       console.error("Error updating transaction:", err);
     }
@@ -577,6 +679,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       });
       if (!response.ok) throw new Error('Failed to delete transaction');
+      setSuccessMessage("🗑️ Transação excluída com sucesso!");
     } catch (err) {
       console.error("Error deleting transaction:", err);
     }
@@ -660,6 +763,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       creditCards,
       tags,
       notificationSettings,
+      successMessage,
+      setSuccessMessage,
       addTransaction,
       deleteTransaction,
       addCategory,
@@ -676,6 +781,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
       deleteAccount,
       updateNotificationSettings,
       importTransactions,
+      deleteImport,
       updateTransaction,
       totalBalance,
       monthlyIncome,

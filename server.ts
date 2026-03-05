@@ -11,18 +11,27 @@ const __dirname = path.dirname(__filename);
 // Database initialization
 let sql: any = null;
 let db: any = null;
+let tablesCreated: string[] = [];
 
 if (process.env.POSTGRES_URL) {
   sql = neon(process.env.POSTGRES_URL);
   // Initialize Postgres tables
   const initPostgres = async () => {
     try {
-      await sql`CREATE TABLE IF NOT EXISTS transactions (id TEXT PRIMARY KEY, description TEXT, amount REAL, date TEXT, category TEXT, type TEXT, accountId TEXT, tags TEXT, creditCardId TEXT, userId TEXT)`;
-      await sql`CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT, icon TEXT, color TEXT, type TEXT, userId TEXT)`;
-      await sql`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, name TEXT, balance REAL, color TEXT, icon TEXT, userId TEXT)`;
-      await sql`CREATE TABLE IF NOT EXISTS credit_cards (id TEXT PRIMARY KEY, name TEXT, brand TEXT, bank TEXT, limit_val REAL, closingDay INTEGER, dueDay INTEGER, color TEXT, userId TEXT)`;
-      await sql`CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY, name TEXT, color TEXT, userId TEXT)`;
-      await sql`CREATE TABLE IF NOT EXISTS notification_settings (userId TEXT PRIMARY KEY, cardDueReminders BOOLEAN, transactionReminders BOOLEAN, reminderTime TEXT, daysBeforeDue INTEGER)`;
+      const tables = ['transactions', 'categories', 'accounts', 'credit_cards', 'tags', 'notification_settings'];
+      for (const table of tables) {
+        // Check if table exists
+        const exists = await sql`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = ${table})`;
+        if (!exists[0].exists) {
+          if (table === 'transactions') await sql`CREATE TABLE transactions (id TEXT PRIMARY KEY, description TEXT, amount REAL, date TEXT, category TEXT, type TEXT, accountId TEXT, tags TEXT, creditCardId TEXT, userId TEXT, importId TEXT, importDate TEXT)`;
+          if (table === 'categories') await sql`CREATE TABLE categories (id TEXT PRIMARY KEY, name TEXT, icon TEXT, color TEXT, type TEXT, userId TEXT)`;
+          if (table === 'accounts') await sql`CREATE TABLE accounts (id TEXT PRIMARY KEY, name TEXT, balance REAL, color TEXT, icon TEXT, userId TEXT)`;
+          if (table === 'credit_cards') await sql`CREATE TABLE credit_cards (id TEXT PRIMARY KEY, name TEXT, brand TEXT, bank TEXT, limit_val REAL, closingDay INTEGER, dueDay INTEGER, color TEXT, userId TEXT)`;
+          if (table === 'tags') await sql`CREATE TABLE tags (id TEXT PRIMARY KEY, name TEXT, color TEXT, userId TEXT)`;
+          if (table === 'notification_settings') await sql`CREATE TABLE notification_settings (userId TEXT PRIMARY KEY, cardDueReminders BOOLEAN, transactionReminders BOOLEAN, reminderTime TEXT, daysBeforeDue INTEGER)`;
+          tablesCreated.push(table);
+        }
+      }
     } catch (e) {
       console.error("Postgres initialization error:", e);
     }
@@ -30,26 +39,22 @@ if (process.env.POSTGRES_URL) {
   initPostgres();
 } else {
   db = new Database("finance.db");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id TEXT PRIMARY KEY, description TEXT, amount REAL, date TEXT, category TEXT, type TEXT, accountId TEXT, tags TEXT, creditCardId TEXT, userId TEXT
-    );
-    CREATE TABLE IF NOT EXISTS categories (
-      id TEXT PRIMARY KEY, name TEXT, icon TEXT, color TEXT, type TEXT, userId TEXT
-    );
-    CREATE TABLE IF NOT EXISTS accounts (
-      id TEXT PRIMARY KEY, name TEXT, balance REAL, color TEXT, icon TEXT, userId TEXT
-    );
-    CREATE TABLE IF NOT EXISTS credit_cards (
-      id TEXT PRIMARY KEY, name TEXT, brand TEXT, bank TEXT, limit_val REAL, closingDay INTEGER, dueDay INTEGER, color TEXT, userId TEXT
-    );
-    CREATE TABLE IF NOT EXISTS tags (
-      id TEXT PRIMARY KEY, name TEXT, color TEXT, userId TEXT
-    );
-    CREATE TABLE IF NOT EXISTS notification_settings (
-      userId TEXT PRIMARY KEY, cardDueReminders BOOLEAN, transactionReminders BOOLEAN, reminderTime TEXT, daysBeforeDue INTEGER
-    );
-  `);
+  const tables = [
+    { name: 'transactions', schema: 'id TEXT PRIMARY KEY, description TEXT, amount REAL, date TEXT, category TEXT, type TEXT, accountId TEXT, tags TEXT, creditCardId TEXT, userId TEXT, importId TEXT, importDate TEXT' },
+    { name: 'categories', schema: 'id TEXT PRIMARY KEY, name TEXT, icon TEXT, color TEXT, type TEXT, userId TEXT' },
+    { name: 'accounts', schema: 'id TEXT PRIMARY KEY, name TEXT, balance REAL, color TEXT, icon TEXT, userId TEXT' },
+    { name: 'credit_cards', schema: 'id TEXT PRIMARY KEY, name TEXT, brand TEXT, bank TEXT, limit_val REAL, closingDay INTEGER, dueDay INTEGER, color TEXT, userId TEXT' },
+    { name: 'tags', schema: 'id TEXT PRIMARY KEY, name TEXT, color TEXT, userId TEXT' },
+    { name: 'notification_settings', schema: 'userId TEXT PRIMARY KEY, cardDueReminders BOOLEAN, transactionReminders BOOLEAN, reminderTime TEXT, daysBeforeDue INTEGER' }
+  ];
+
+  tables.forEach(table => {
+    const check = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table.name);
+    if (!check) {
+      db.exec(`CREATE TABLE ${table.name} (${table.schema})`);
+      tablesCreated.push(table.name);
+    }
+  });
 }
 
 // Seed Defaults
@@ -107,6 +112,14 @@ async function startServer() {
 
   app.use(express.json());
 
+  app.get("/api/db-status", (req, res) => {
+    res.json({ 
+      status: "connected", 
+      type: sql ? "postgres" : "sqlite",
+      newTables: tablesCreated 
+    });
+  });
+
   // API Routes
   const getUserId = (req: any) => req.headers["x-user-id"];
   const isAdmin = (req: any) => req.headers["x-is-admin"] === "true";
@@ -134,9 +147,9 @@ async function startServer() {
     const userId = getUserId(req);
     try {
       if (sql) {
-        await sql`INSERT INTO transactions (id, description, amount, date, category, type, accountId, tags, creditCardId, userId) VALUES (${t.id}, ${t.description}, ${t.amount}, ${t.date}, ${t.category}, ${t.type}, ${t.accountId}, ${JSON.stringify(t.tags || [])}, ${t.creditCardId}, ${userId})`;
+        await sql`INSERT INTO transactions (id, description, amount, date, category, type, accountId, tags, creditCardId, userId, importId, importDate) VALUES (${t.id}, ${t.description}, ${t.amount}, ${t.date}, ${t.category}, ${t.type}, ${t.accountId}, ${JSON.stringify(t.tags || [])}, ${t.creditCardId}, ${userId}, ${t.importId}, ${t.importDate})`;
       } else {
-        db.prepare("INSERT INTO transactions (id, description, amount, date, category, type, accountId, tags, creditCardId, userId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(t.id, t.description, t.amount, t.date, t.category, t.type, t.accountId, JSON.stringify(t.tags || []), t.creditCardId, userId);
+        db.prepare("INSERT INTO transactions (id, description, amount, date, category, type, accountId, tags, creditCardId, userId, importId, importDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(t.id, t.description, t.amount, t.date, t.category, t.type, t.accountId, JSON.stringify(t.tags || []), t.creditCardId, userId, t.importId, t.importDate);
       }
       res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e }); }

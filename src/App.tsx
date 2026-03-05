@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   ArrowUpCircle, 
@@ -43,11 +43,15 @@ import {
   Shield,
   Star,
   Heart,
-  LogOut
+  LogOut,
+  FileSpreadsheet,
+  FileText,
+  CheckCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import * as XLSX from 'xlsx';
 import { 
   AreaChart, 
   Area, 
@@ -359,10 +363,23 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
   const [selectedTags, setSelectedTags] = useState<string[]>(initialData?.tags || []);
   const [creditCardId, setCreditCardId] = useState<string>(initialData?.creditCardId || '');
   const [date, setDate] = useState(initialData ? format(parseISO(initialData.date), 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));
+  const [installments, setInstallments] = useState(initialData?.installments?.toString() || '1');
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || !description) return;
+    setError(null);
+
+    const parsedAmount = parseFloat(amount.replace(',', '.'));
+    if (!amount || isNaN(parsedAmount) || parsedAmount <= 0) {
+      setError('Por favor, insira um valor válido maior que zero.');
+      return;
+    }
+
+    if (!description) {
+      setError('A descrição é obrigatória.');
+      return;
+    }
 
     const [year, month, day] = date.split('-').map(Number);
     const transactionDate = new Date(year, month - 1, day);
@@ -376,14 +393,15 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
     }
 
     const data = {
-      amount: parseFloat(amount),
+      amount: parseFloat(amount.replace(',', '.')) || 0,
       description,
       type,
       category,
       accountId: selectedAccountId,
       date: transactionDate.toISOString(),
       tags: selectedTags,
-      creditCardId: creditCardId || undefined
+      creditCardId: creditCardId || undefined,
+      installments: parseInt(installments) || 1
     };
 
     if (initialData) {
@@ -468,20 +486,36 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
           </div>
 
           {/* Amount Input */}
-          <div className="text-center py-4">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Valor</label>
+          <div className="text-center py-4 space-y-2">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">
+              {parseInt(installments) > 1 ? 'Valor da Parcela' : 'Valor'}
+            </label>
             <div className="flex items-center justify-center gap-2">
               <span className="text-2xl font-bold text-slate-400">R$</span>
               <input
-                type="number"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '' || /^\d*([.,]\d{0,2})?$/.test(val)) {
+                    setAmount(val);
+                    setError(null);
+                  }
+                }}
                 placeholder="0,00"
-                className="text-5xl font-bold text-slate-800 bg-transparent border-none focus:ring-0 w-48 text-center outline-none"
+                className={cn(
+                  "text-5xl font-bold bg-transparent border-none focus:ring-0 w-full max-w-[280px] text-center outline-none transition-colors",
+                  error && amount === '' ? "text-rose-300" : "text-slate-800"
+                )}
                 autoFocus
               />
             </div>
+            {error && (
+              <p className="text-[10px] text-rose-500 font-bold uppercase tracking-tighter animate-bounce">
+                {error}
+              </p>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -554,6 +588,27 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
               </div>
             )}
 
+            {!initialData && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Número de Parcelas</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="1"
+                    max="120"
+                    value={installments}
+                    onChange={(e) => setInstallments(e.target.value)}
+                    className="w-24 bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none"
+                  />
+                  <span className="text-xs text-slate-400 font-medium">
+                    {parseInt(installments) > 1 
+                      ? `Total: ${formatCurrency((parseFloat(amount.replace(',', '.')) || 0) * parseInt(installments))}` 
+                      : 'Pagamento único'}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Tags</label>
               <div className="flex flex-wrap gap-2">
@@ -589,6 +644,214 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
         </form>
       </motion.div>
     </motion.div>
+  );
+};
+
+const ImportManager = () => {
+  const { 
+    transactions, 
+    deleteImport,
+    importTransactions,
+    accounts,
+    categories,
+    creditCards,
+    tags
+  } = useFinance();
+
+  const imports = useMemo(() => {
+    const groups: Record<string, { id: string, date: string, count: number, total: number }> = {};
+    
+    transactions.forEach(t => {
+      if (t.importId) {
+        if (!groups[t.importId]) {
+          groups[t.importId] = {
+            id: t.importId,
+            date: t.importDate || t.date,
+            count: 0,
+            total: 0
+          };
+        }
+        groups[t.importId].count++;
+        groups[t.importId].total += t.amount;
+      }
+    });
+
+    return Object.values(groups).sort((a, b) => {
+      try {
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      } catch (e) {
+        return 0;
+      }
+    });
+  }, [transactions]);
+
+  const handleDelete = async (importId: string) => {
+    if (window.confirm('Tem certeza que deseja excluir esta importação? Todas as transações vinculadas serão removidas e o saldo das contas será recalculado.')) {
+      await deleteImport(importId);
+    }
+  };
+
+  const downloadExcelTemplate = () => {
+    const templateData = [
+      {
+        'Data (AAAA-MM-DD)': format(new Date(), 'yyyy-MM-dd'),
+        'Descrição': 'Exemplo de Transação',
+        'Valor': 100.50,
+        'Categoria': categories[0]?.name || 'Alimentação',
+        'Tipo (expense/income)': 'expense',
+        'Conta': accounts[0]?.name || 'Carteira',
+        'Tags (separadas por vírgula)': 'tag1, tag2',
+        'Cartão (Opcional)': creditCards[0]?.name || '',
+        'Parcelas': 1
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "modelo_importacao_transacoes.xlsx");
+  };
+
+  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+        const allMappedTransactions: Transaction[] = [];
+
+        data.forEach((row: any) => {
+          const type = row['Tipo (expense/income)'] === 'income' ? 'income' : 'expense';
+          const account = accounts.find(a => a.name.toLowerCase() === (row['Conta'] || '').toString().toLowerCase()) || accounts[0];
+          const categoryName = row['Categoria'] || (type === 'income' ? 'Salário' : 'Alimentação');
+          const card = creditCards.find(c => c.name.toLowerCase() === (row['Cartão (Opcional)'] || '').toString().toLowerCase());
+          const tagNames = (row['Tags (separadas por vírgula)'] || '').toString().split(',').map((s: string) => s.trim()).filter(Boolean);
+          const tagIds = tagNames.map((name: string) => {
+            const foundTag = tags.find(t => t.name.toLowerCase() === name.toLowerCase());
+            return foundTag ? foundTag.id : null;
+          }).filter(Boolean) as string[];
+
+          // Improved number parsing for Brazilian format
+          const rawAmount = (row['Valor'] || '0').toString();
+          const parsedAmount = parseFloat(rawAmount.replace(/\./g, '').replace(',', '.'));
+          const amount = isNaN(parsedAmount) ? 0 : parsedAmount;
+
+          const installments = parseInt(row['Parcelas']) || 1;
+          const installmentId = installments > 1 ? Math.random().toString(36).substr(2, 9) : undefined;
+          const baseDate = row['Data (AAAA-MM-DD)'] ? new Date(row['Data (AAAA-MM-DD)']).toISOString() : new Date().toISOString();
+
+          for (let i = 0; i < installments; i++) {
+            const date = i === 0 ? baseDate : addMonths(parseISO(baseDate), i).toISOString();
+            allMappedTransactions.push({
+              id: Math.random().toString(36).substr(2, 9),
+              description: row['Descrição'] || 'Sem descrição',
+              amount,
+              date,
+              category: categoryName,
+              type: type,
+              accountId: account.id,
+              tags: tagIds,
+              creditCardId: card?.id,
+              installmentId,
+              installmentIndex: installments > 1 ? i + 1 : undefined,
+              installments: installments > 1 ? installments : undefined
+            });
+          }
+        });
+
+        importTransactions(allMappedTransactions);
+      } catch (err) {
+        console.error(err);
+        alert('Erro ao processar o arquivo Excel. Verifique se o formato está correto.');
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white p-6 rounded-3xl card-shadow space-y-4">
+        <h3 className="text-slate-800 font-semibold text-sm">Nova Importação</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <button onClick={downloadExcelTemplate} className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-3xl gap-2 hover:bg-slate-100 transition-colors border border-slate-100">
+            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center">
+              <FileText size={24} />
+            </div>
+            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Baixar Modelo</span>
+          </button>
+          <label className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-3xl gap-2 hover:bg-slate-100 transition-colors cursor-pointer border border-slate-100">
+            <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center">
+              <FileSpreadsheet size={24} />
+            </div>
+            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Importar Excel</span>
+            <input type="file" accept=".xlsx, .xls" onChange={handleExcelImport} className="hidden" />
+          </label>
+        </div>
+        <p className="text-[10px] text-slate-400 font-medium text-center">
+          * Use o modelo para garantir que as colunas estejam corretas.
+        </p>
+      </div>
+
+      <div className="bg-white p-6 rounded-3xl card-shadow space-y-4">
+        <h3 className="text-slate-800 font-semibold text-sm">Histórico de Importações</h3>
+        <p className="text-slate-400 text-xs font-medium">Visualize e gerencie os lotes importados.</p>
+      </div>
+
+      <div className="space-y-4">
+        {imports.length === 0 ? (
+          <div className="bg-white p-12 rounded-[3rem] text-center card-shadow border border-slate-50">
+            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200 mb-4">
+              <FileSpreadsheet size={32} />
+            </div>
+            <p className="text-slate-400 text-sm font-medium">Nenhuma importação encontrada.</p>
+            <p className="text-[10px] text-slate-300 mt-2">Importações feitas antes desta atualização não podem ser gerenciadas individualmente.</p>
+          </div>
+        ) : (
+          imports.map((imp) => (
+            <div key={imp.id} className="bg-white p-6 rounded-[2rem] card-shadow border border-slate-50 flex items-center justify-between group animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center">
+                  <FileSpreadsheet size={24} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold text-slate-800">Lote #{imp.id}</p>
+                    <span className="text-[8px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tighter">
+                      Importado
+                    </span>
+                  </div>
+                  <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider mt-0.5">
+                    {format(parseISO(imp.date), "dd 'de' MMMM 'às' HH:mm", { locale: ptBR })}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-[9px] bg-slate-50 text-slate-500 px-2 py-1 rounded-lg font-bold border border-slate-100">
+                      {imp.count} transações
+                    </span>
+                    <span className="text-[9px] bg-slate-50 text-slate-500 px-2 py-1 rounded-lg font-bold border border-slate-100">
+                      Total: {formatCurrency(imp.total)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button 
+                onClick={() => { if(window.confirm('Excluir esta importação?')) handleDelete(imp.id); }}
+                className="w-10 h-10 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center lg:opacity-0 lg:group-hover:opacity-100 transition-all active:scale-90"
+                title="Excluir Importação"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
   );
 };
 
@@ -658,10 +921,14 @@ const CategoryManager = () => {
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <button onClick={() => startEdit(cat)} className="p-2 text-slate-300 hover:text-black transition-colors">
+                <button onClick={() => startEdit(cat)} className="p-2 text-slate-300 hover:text-black transition-colors" title="Editar Categoria">
                   <Edit2 size={16} />
                 </button>
-                <button onClick={() => { if(confirm('Excluir esta categoria?')) deleteCategory(cat.id); }} className="p-2 text-slate-300 hover:text-rose-500 transition-colors">
+                <button 
+                  onClick={() => { if(window.confirm('Excluir esta categoria?')) deleteCategory(cat.id); }} 
+                  className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                  title="Excluir Categoria"
+                >
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -885,12 +1152,14 @@ const CreditCardManager = () => {
                   <button 
                     onClick={() => { setIsEditing(card.id); setFormData(card); }} 
                     className="p-2 bg-slate-50 text-slate-400 rounded-xl hover:text-black hover:bg-slate-100 transition-colors"
+                    title="Editar Cartão"
                   >
                     <Edit2 size={16} />
                   </button>
                   <button 
-                    onClick={() => { if(confirm('Excluir este cartão?')) deleteCreditCard(card.id); }} 
+                    onClick={() => { if(window.confirm('Excluir este cartão?')) deleteCreditCard(card.id); }} 
                     className="p-2 bg-rose-50 text-rose-400 rounded-xl hover:text-rose-600 hover:bg-rose-100 transition-colors"
+                    title="Excluir Cartão"
                   >
                     <Trash2 size={16} />
                   </button>
@@ -1085,12 +1354,14 @@ const AccountManager = () => {
               <button 
                 onClick={() => startEdit(acc)}
                 className="w-10 h-10 bg-slate-50 text-slate-400 rounded-xl flex items-center justify-center hover:text-black transition-colors"
+                title="Editar Conta"
               >
                 <Edit2 size={18} />
               </button>
               <button 
-                onClick={() => { if(confirm('Excluir esta conta?')) deleteAccount(acc.id); }}
+                onClick={() => { if(window.confirm('Excluir esta conta?')) deleteAccount(acc.id); }}
                 className="w-10 h-10 bg-rose-50 text-rose-400 rounded-xl flex items-center justify-center hover:text-rose-600 transition-colors"
+                title="Excluir Conta"
               >
                 <Trash2 size={18} />
               </button>
@@ -1239,12 +1510,14 @@ const TagManager = () => {
                 <button 
                   onClick={() => { setIsEditing(tag.id); setFormData(tag); }} 
                   className="hover:text-black/50 transition-colors"
+                  title="Editar Tag"
                 >
                   <Edit2 size={12} />
                 </button>
                 <button 
-                  onClick={() => { if(confirm('Excluir esta tag?')) deleteTag(tag.id); }} 
+                  onClick={() => { if(window.confirm('Excluir esta tag?')) deleteTag(tag.id); }} 
                   className="hover:text-black/50 transition-colors"
+                  title="Excluir Tag"
                 >
                   <Trash2 size={12} />
                 </button>
@@ -1326,7 +1599,11 @@ const TagManager = () => {
 };
 
 const MoreOptions = () => {
-  const { transactions, importTransactions, notificationSettings, updateNotificationSettings } = useFinance();
+  const { 
+    transactions, 
+    notificationSettings, 
+    updateNotificationSettings
+  } = useFinance();
 
   const exportData = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(transactions));
@@ -1339,37 +1616,26 @@ const MoreOptions = () => {
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target?.result as string);
-        importTransactions(data);
-        alert('Transações importadas com sucesso!');
-      } catch (err) {
-        alert('Erro ao importar arquivo.');
-      }
-    };
-    reader.readAsText(file);
+    // This function is no longer needed here as it's moved to ImportManager
+    // But keeping it for JSON backup if needed, though the request was to move "Importação em lote"
   };
 
   return (
     <div className="space-y-8">
       <div className="space-y-4">
-        <h3 className="text-slate-800 font-semibold text-sm px-2">Backup e Dados</h3>
+        <h3 className="text-slate-800 font-semibold text-sm px-2">Backup e Dados (JSON)</h3>
         <div className="grid grid-cols-2 gap-4">
           <button onClick={exportData} className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl card-shadow gap-2 hover:bg-slate-50 transition-colors">
             <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-black">
               <Download size={24} />
             </div>
-            <span className="text-xs font-bold text-slate-600">Exportar</span>
+            <span className="text-xs font-bold text-slate-600">Exportar JSON</span>
           </button>
           <label className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl card-shadow gap-2 hover:bg-slate-50 transition-colors cursor-pointer">
             <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-black">
               <Upload size={24} />
             </div>
-            <span className="text-xs font-bold text-slate-600">Importar</span>
+            <span className="text-xs font-bold text-slate-600">Importar JSON</span>
             <input type="file" accept=".json" onChange={handleImport} className="hidden" />
           </label>
         </div>
@@ -2024,6 +2290,11 @@ const HistoryTab = ({ onEdit }: { onEdit: (t: Transaction) => void }) => {
                           {card.name}
                         </span>
                       )}
+                      {t.installmentId && (
+                        <span className="text-[8px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tighter">
+                          {t.installmentIndex}/{t.installments}
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-col gap-1 mt-1">
                       <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">
@@ -2048,18 +2319,20 @@ const HistoryTab = ({ onEdit }: { onEdit: (t: Transaction) => void }) => {
                   )}>
                     {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
                   </p>
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                     <button 
                       onClick={() => onEdit(t)}
-                      className="p-2 text-slate-300 hover:text-black transition-colors"
+                      className="p-3 text-slate-300 hover:text-black transition-colors"
+                      title="Editar Transação"
                     >
-                      <Edit2 size={14} />
+                      <Edit2 size={18} />
                     </button>
                     <button 
-                      onClick={() => { if(confirm('Excluir esta transação?')) deleteTransaction(t.id); }}
-                      className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                      onClick={() => { if(window.confirm('Excluir esta transação?')) deleteTransaction(t.id); }}
+                      className="p-3 text-slate-300 hover:text-rose-500 transition-colors"
+                      title="Excluir Transação"
                     >
-                      <Trash2 size={14} />
+                      <Trash2 size={18} />
                     </button>
                   </div>
                 </div>
@@ -2096,6 +2369,7 @@ const SettingsTab = () => {
       title: 'Conta e Dados',
       items: [
         { id: 'users', label: 'Usuários', description: 'Gerencie os usuários do sistema', icon: User, color: 'bg-slate-100 text-slate-600' },
+        { id: 'imports', label: 'Importações', description: 'Gerencie planilhas importadas', icon: FileSpreadsheet, color: 'bg-slate-100 text-slate-600' },
         { id: 'more', label: 'Dados e Sistema', description: 'Importar, exportar ou resetar', icon: MoreHorizontal, color: 'bg-slate-100 text-slate-600' },
       ]
     }
@@ -2141,6 +2415,7 @@ const SettingsTab = () => {
           {activeSubTab === 'categories' && <CategoryManager />}
           {activeSubTab === 'accounts' && <AccountManager />}
           {activeSubTab === 'users' && <UserManager />}
+          {activeSubTab === 'imports' && <ImportManager />}
           {activeSubTab === 'cards' && <CreditCardManager />}
           {activeSubTab === 'reports' && <ReportGenerator />}
           {activeSubTab === 'tags' && <TagManager />}
@@ -2301,8 +2576,41 @@ const Sidebar = ({ activeTab, setActiveTab, setIsAdding }: { activeTab: string, 
   );
 };
 
+const Toast = () => {
+  const { successMessage, setSuccessMessage } = useFinance();
+
+  useEffect(() => {
+    if (successMessage) {
+      const timer = setTimeout(() => {
+        setSuccessMessage(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMessage, setSuccessMessage]);
+
+  return (
+    <AnimatePresence>
+      {successMessage && (
+        <motion.div
+          initial={{ opacity: 0, y: 50, scale: 0.9 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 20, scale: 0.9 }}
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[200] w-[90%] max-w-xs"
+        >
+          <div className="bg-emerald-500 text-white p-4 rounded-3xl shadow-2xl flex items-center gap-3 border border-emerald-400">
+            <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+              <CheckCircle size={18} />
+            </div>
+            <p className="text-xs font-black uppercase tracking-wider">{successMessage}</p>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
 const AppContent = () => {
-  const { user } = useFinance();
+  const { user, successMessage } = useFinance();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [tabKeys, setTabKeys] = useState<Record<string, number>>({
     dashboard: 0,
@@ -2402,6 +2710,8 @@ const AppContent = () => {
           />
         )}
       </AnimatePresence>
+
+      <Toast />
     </div>
   );
 };

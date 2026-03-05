@@ -24,6 +24,11 @@ export interface Transaction {
   accountId: string;
   tags?: string[];
   creditCardId?: string;
+  installments?: number;
+  installmentIndex?: number;
+  installmentId?: string;
+  importId?: string;
+  importDate?: string;
 }
 
 export interface Account {
