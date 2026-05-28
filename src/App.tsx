@@ -46,7 +46,10 @@ import {
   LogOut,
   FileSpreadsheet,
   FileText,
-  CheckCircle
+  CheckCircle,
+  AlertCircle,
+  Loader2,
+  Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, parseISO, addMonths } from 'date-fns';
@@ -67,7 +70,7 @@ import {
   Cell
 } from 'recharts';
 import { FinanceProvider, useFinance } from './FinanceContext';
-import { formatCurrency, TransactionType, cn, DEFAULT_CATEGORIES, Transaction } from './types';
+import { formatCurrency, TransactionType, cn, DEFAULT_CATEGORIES, Transaction, Category, CreditCard, Tag } from './types';
 import { auth } from './firebase';
 import { UserManager } from './components/UserManager';
 import { LoginPage } from './components/LoginPage';
@@ -108,13 +111,45 @@ const CategoryIcon = ({ icon, size = 20, className = "" }: { icon: string, size?
 };
 
 const Dashboard = ({ onViewAll }: { onViewAll: () => void }) => {
-  const { user, totalBalance, monthlyIncome, monthlyExpense, currentMonthName, transactions, categories, creditCards, tags } = useFinance();
+  const { user, totalBalance, transactions, categories, creditCards, tags } = useFinance();
 
-  const now = new Date();
-  const monthlyTransactions = transactions.filter(t => {
-    const d = parseISO(t.date);
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  });
+  const [selectedMonth, setSelectedMonth] = useState<'current' | 'next'>('current');
+  const now = useMemo(() => new Date(), []);
+
+  const viewingDate = useMemo(() => {
+    if (selectedMonth === 'current') return now;
+    return new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  }, [selectedMonth, now]);
+
+  const viewingMonthName = useMemo(() => {
+    const raw = format(viewingDate, 'MMMM yyyy', { locale: ptBR });
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }, [viewingDate]);
+
+  const monthlyTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      try {
+        const d = parseISO(t.date);
+        return d.getMonth() === viewingDate.getMonth() && d.getFullYear() === viewingDate.getFullYear();
+      } catch (e) {
+        return false;
+      }
+    });
+  }, [transactions, viewingDate]);
+
+  const sortedMonthlyTransactions = useMemo(() => {
+    return [...monthlyTransactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [monthlyTransactions]);
+
+  const { displayedIncome, displayedExpense } = useMemo(() => {
+    const income = monthlyTransactions
+      .filter(t => t.type === 'income')
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    const expense = monthlyTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((acc, curr) => acc + curr.amount, 0);
+    return { displayedIncome: income, displayedExpense: expense };
+  }, [monthlyTransactions]);
 
   const chartData = useMemo(() => {
     const grouped = monthlyTransactions.reduce((acc: Record<string, number>, t) => {
@@ -133,21 +168,23 @@ const Dashboard = ({ onViewAll }: { onViewAll: () => void }) => {
       });
   }, [monthlyTransactions]);
 
-  const pieData = categories
-    .filter(c => c.type === 'expense')
-    .map(c => {
-      const total = transactions
-        .filter(t => t.category === c.name && t.type === 'expense')
-        .reduce((acc, curr) => acc + curr.amount, 0);
-      return { name: c.name, value: total, color: c.color };
-    })
-    .filter(d => d.value > 0);
+  const pieData = useMemo(() => {
+    return categories
+      .filter(c => c.type === 'expense')
+      .map(c => {
+        const total = monthlyTransactions
+          .filter(t => t.category === c.name && t.type === 'expense')
+          .reduce((acc, curr) => acc + curr.amount, 0);
+        return { name: c.name, value: total, color: c.color };
+      })
+      .filter(d => d.value > 0);
+  }, [categories, monthlyTransactions]);
 
   return (
     <div className="space-y-6 pb-24 lg:pb-0">
       {/* Header Summary */}
       <div className="bg-black text-white p-6 rounded-b-[2.5rem] shadow-2xl -mx-4 pt-12 lg:rounded-[3rem] lg:mx-0 lg:pt-10 lg:p-12 lg:shadow-black/20">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <p className="text-slate-400 text-sm font-medium">Saldo Total</p>
             <h2 className={cn(
@@ -160,20 +197,38 @@ const Dashboard = ({ onViewAll }: { onViewAll: () => void }) => {
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Saldo do Mês:</span>
               <span className={cn(
                 "text-xs font-black",
-                (monthlyIncome - monthlyExpense) >= 0 ? "text-emerald-400" : "text-rose-400"
+                (displayedIncome - displayedExpense) >= 0 ? "text-emerald-400" : "text-rose-400"
               )}>
-                {formatCurrency(monthlyIncome - monthlyExpense)}
+                {formatCurrency(displayedIncome - displayedExpense)}
               </span>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-slate-400 text-[10px] lg:text-xs font-bold uppercase tracking-widest">{currentMonthName}</p>
-            <div className="mt-2 hidden lg:flex gap-2 justify-end">
-               <div className="px-3 py-1 bg-white/10 rounded-full text-[10px] font-bold uppercase tracking-tighter">Premium</div>
-               {user?.email === 'admin@meufinanceiro.com' && (
-                 <div className="px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full text-[10px] font-bold uppercase tracking-tighter">Admin Master</div>
-               )}
+          <div className="flex flex-col items-start sm:items-end gap-2">
+            <div className="flex bg-white/10 p-1 rounded-xl border border-white/5 space-x-1 self-start sm:self-auto">
+              <button
+                onClick={() => setSelectedMonth('current')}
+                className={cn(
+                  "px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all duration-300",
+                  selectedMonth === 'current'
+                    ? "bg-white text-black shadow-md shadow-white/10"
+                    : "text-slate-400 hover:text-white"
+                )}
+              >
+                Mês Vigente
+              </button>
+              <button
+                onClick={() => setSelectedMonth('next')}
+                className={cn(
+                  "px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all duration-300",
+                  selectedMonth === 'next'
+                    ? "bg-white text-black shadow-md shadow-white/10"
+                    : "text-slate-400 hover:text-white"
+                )}
+              >
+                Próximo Mês
+              </button>
             </div>
+            <p className="text-slate-400 text-[10px] lg:text-xs font-bold uppercase tracking-widest">{viewingMonthName}</p>
           </div>
         </div>
         
@@ -183,14 +238,14 @@ const Dashboard = ({ onViewAll }: { onViewAll: () => void }) => {
               <TrendingUp size={14} className="text-emerald-400" />
               <span>Receitas</span>
             </div>
-            <p className="font-bold text-lg lg:text-2xl">{formatCurrency(monthlyIncome)}</p>
+            <p className="font-bold text-lg lg:text-2xl">{formatCurrency(displayedIncome)}</p>
           </div>
           <div className="bg-white/10 backdrop-blur-md rounded-2xl lg:rounded-3xl p-4 lg:p-6 border border-white/5">
             <div className="flex items-center gap-2 text-slate-300 text-xs mb-1 lg:mb-2">
               <TrendingDown size={14} className="text-rose-400" />
               <span>Despesas</span>
             </div>
-            <p className="font-bold text-lg lg:text-2xl">{formatCurrency(monthlyExpense)}</p>
+            <p className="font-bold text-lg lg:text-2xl">{formatCurrency(displayedExpense)}</p>
           </div>
           {/* Desktop only stats */}
           <div className="hidden lg:block bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/5">
@@ -215,7 +270,7 @@ const Dashboard = ({ onViewAll }: { onViewAll: () => void }) => {
         <div className="lg:col-span-2 bg-white p-6 lg:p-8 rounded-3xl card-shadow border border-slate-50">
           <h3 className="text-slate-800 font-bold mb-6 text-sm uppercase tracking-wider">Fluxo de Caixa</h3>
           <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorAmt" x1="0" y1="0" x2="0" y2="1">
@@ -253,7 +308,7 @@ const Dashboard = ({ onViewAll }: { onViewAll: () => void }) => {
             <h3 className="text-slate-800 font-bold mb-6 text-sm uppercase tracking-wider">Gastos por Categoria</h3>
             <div className="flex flex-col items-center">
               <div className="h-48 w-48">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <RePieChart>
                     <Pie
                       data={pieData}
@@ -297,12 +352,16 @@ const Dashboard = ({ onViewAll }: { onViewAll: () => void }) => {
           </button>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {transactions.length === 0 ? (
+          {sortedMonthlyTransactions.length === 0 ? (
             <div className="lg:col-span-2 bg-white p-12 rounded-[2.5rem] text-center card-shadow border border-slate-50">
-              <p className="text-slate-400 text-sm font-medium">Nenhuma transação ainda.</p>
+              <p className="text-slate-400 text-sm font-medium">
+                {selectedMonth === 'current' 
+                  ? "Nenhuma transação registrada no mês atual." 
+                  : "Nenhum lançamento previsto para o próximo mês."}
+              </p>
             </div>
           ) : (
-            transactions.slice(0, 6).map((t) => {
+            sortedMonthlyTransactions.slice(0, 6).map((t) => {
               const categoryObj = categories.find(c => c.name === t.category);
               const card = creditCards.find(c => c.id === t.creditCardId);
               const transactionTags = tags.filter(tag => t.tags?.includes(tag.id));
@@ -381,6 +440,11 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
       return;
     }
 
+    if (type === 'expense' && !creditCardId) {
+      setError('O cartão de crédito é obrigatório para despesas.');
+      return;
+    }
+
     const [year, month, day] = date.split('-').map(Number);
     const transactionDate = new Date(year, month - 1, day);
     
@@ -400,7 +464,7 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
       accountId: selectedAccountId,
       date: transactionDate.toISOString(),
       tags: selectedTags,
-      creditCardId: creditCardId || undefined,
+      creditCardId: type === 'expense' ? creditCardId : null,
       installments: parseInt(installments) || 1
     };
 
@@ -430,7 +494,7 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
         animate={{ y: 0, scale: 1 }}
         exit={{ y: 100, scale: 0.95 }}
         className={cn(
-          "bg-white/95 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border max-h-[90vh] overflow-y-auto transition-all duration-500",
+          "bg-white/95 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border max-h-[90vh] overflow-y-auto custom-scrollbar transition-all duration-500",
           initialData ? "border-amber-200 ring-8 ring-amber-50/50" : "border-white/20"
         )}
       >
@@ -569,13 +633,19 @@ const TransactionForm = ({ onClose, initialData }: { onClose: () => void, initia
 
             {type === 'expense' && (
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Cartão de Crédito (Opcional)</label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Cartão de Crédito</label>
                 <select
                   value={creditCardId}
-                  onChange={(e) => setCreditCardId(e.target.value)}
-                  className="w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none appearance-none"
+                  onChange={(e) => {
+                    setCreditCardId(e.target.value);
+                    if (e.target.value) setError(null);
+                  }}
+                  className={cn(
+                    "w-full bg-slate-100/50 border-none rounded-2xl p-4 text-base focus:ring-2 focus:ring-black outline-none appearance-none",
+                    error && !creditCardId ? "ring-2 ring-rose-300" : ""
+                  )}
                 >
-                  <option value="">Nenhum cartão</option>
+                  <option value="">Selecione um cartão</option>
                   {creditCards.map(card => (
                     <option key={card.id} value={card.id}>{card.name} - {card.bank}</option>
                   ))}
@@ -657,6 +727,10 @@ const ImportManager = () => {
     creditCards,
     tags
   } = useFinance();
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
+  const [importResults, setImportResults] = useState<{ success: number, errors: number, details: string[] } | null>(null);
 
   const imports = useMemo(() => {
     const groups: Record<string, { id: string, date: string, count: number, total: number }> = {};
@@ -712,12 +786,16 @@ const ImportManager = () => {
     XLSX.writeFile(wb, "modelo_importacao_transacoes.xlsx");
   };
 
-  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setIsImporting(true);
+    setImportProgress(0);
+    setImportResults(null);
+
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
@@ -725,54 +803,78 @@ const ImportManager = () => {
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws) as any[];
 
+        if (data.length === 0) {
+          setImportResults({ success: 0, errors: 1, details: ['Arquivo vazio ou sem dados válidos.'] });
+          return;
+        }
+
         const allMappedTransactions: Transaction[] = [];
+        let errors = 0;
+        const errorDetails: string[] = [];
 
-        data.forEach((row: any) => {
-          const type = row['Tipo (expense/income)'] === 'income' ? 'income' : 'expense';
-          const account = accounts.find(a => a.name.toLowerCase() === (row['Conta'] || '').toString().toLowerCase()) || accounts[0];
-          const categoryName = row['Categoria'] || (type === 'income' ? 'Salário' : 'Alimentação');
-          const card = creditCards.find(c => c.name.toLowerCase() === (row['Cartão (Opcional)'] || '').toString().toLowerCase());
-          const tagNames = (row['Tags (separadas por vírgula)'] || '').toString().split(',').map((s: string) => s.trim()).filter(Boolean);
-          const tagIds = tagNames.map((name: string) => {
-            const foundTag = tags.find(t => t.name.toLowerCase() === name.toLowerCase());
-            return foundTag ? foundTag.id : null;
-          }).filter(Boolean) as string[];
+        const totalRows = data.length;
+        for (let i = 0; i < totalRows; i++) {
+          const row = data[i];
+          try {
+            const type = row['Tipo (expense/income)'] === 'income' ? 'income' : 'expense';
+            const account = accounts.find(a => a.name.toLowerCase() === (row['Conta'] || '').toString().toLowerCase()) || accounts[0];
+            const categoryName = row['Categoria'] || (type === 'income' ? 'Salário' : 'Alimentação');
+            const card = creditCards.find(c => c.name.toLowerCase() === (row['Cartão (Opcional)'] || '').toString().toLowerCase());
+            const tagNames = (row['Tags (separadas por vírgula)'] || '').toString().split(',').map((s: string) => s.trim()).filter(Boolean);
+            const tagIds = tagNames.map((name: string) => {
+              const foundTag = tags.find(t => t.name.toLowerCase() === name.toLowerCase());
+              return foundTag ? foundTag.id : null;
+            }).filter(Boolean) as string[];
 
-          // Improved number parsing for Brazilian format
-          const rawAmount = (row['Valor'] || '0').toString();
-          const parsedAmount = parseFloat(rawAmount.replace(/\./g, '').replace(',', '.'));
-          const amount = isNaN(parsedAmount) ? 0 : parsedAmount;
+            const rawAmount = (row['Valor'] || '0').toString();
+            const parsedAmount = parseFloat(rawAmount.replace(/\./g, '').replace(',', '.'));
+            const amount = isNaN(parsedAmount) ? 0 : parsedAmount;
 
-          const installments = parseInt(row['Parcelas']) || 1;
-          const installmentId = installments > 1 ? Math.random().toString(36).substr(2, 9) : undefined;
-          const baseDate = row['Data (AAAA-MM-DD)'] ? new Date(row['Data (AAAA-MM-DD)']).toISOString() : new Date().toISOString();
+            const installments = parseInt(row['Parcelas']) || 1;
+            const installmentId = installments > 1 ? Math.random().toString(36).substr(2, 9) : undefined;
+            const baseDate = row['Data (AAAA-MM-DD)'] ? new Date(row['Data (AAAA-MM-DD)']).toISOString() : new Date().toISOString();
 
-          for (let i = 0; i < installments; i++) {
-            const date = i === 0 ? baseDate : addMonths(parseISO(baseDate), i).toISOString();
-            allMappedTransactions.push({
-              id: Math.random().toString(36).substr(2, 9),
-              description: row['Descrição'] || 'Sem descrição',
-              amount,
-              date,
-              category: categoryName,
-              type: type,
-              accountId: account.id,
-              tags: tagIds,
-              creditCardId: card?.id,
-              installmentId,
-              installmentIndex: installments > 1 ? i + 1 : undefined,
-              installments: installments > 1 ? installments : undefined
-            });
+            for (let j = 0; j < installments; j++) {
+              const date = j === 0 ? baseDate : addMonths(parseISO(baseDate), j).toISOString();
+              allMappedTransactions.push({
+                id: Math.random().toString(36).substr(2, 9),
+                description: row['Descrição'] || 'Sem descrição',
+                amount,
+                date,
+                category: categoryName,
+                type: type,
+                accountId: account.id,
+                tags: tagIds,
+                creditCardId: card?.id,
+                installmentId,
+                installmentIndex: installments > 1 ? j + 1 : undefined,
+                installments: installments > 1 ? installments : undefined
+              });
+            }
+          } catch (err) {
+            errors++;
+            errorDetails.push(`Linha ${i + 2}: Erro ao processar dados.`);
           }
-        });
+          
+          setImportProgress(Math.round(((i + 1) / totalRows) * 100));
+          if (totalRows > 10) await new Promise(r => setTimeout(r, 10));
+        }
 
-        importTransactions(allMappedTransactions);
+        if (allMappedTransactions.length > 0) {
+          await importTransactions(allMappedTransactions);
+        }
+
+        setImportResults({
+          success: allMappedTransactions.length,
+          errors,
+          details: errorDetails
+        });
       } catch (err) {
-        console.error(err);
-        alert('Erro ao processar o arquivo Excel. Verifique se o formato está correto.');
+        setImportResults({ success: 0, errors: 1, details: ['Erro crítico ao ler o arquivo.'] });
       }
     };
     reader.readAsBinaryString(file);
+    e.target.value = '';
   };
 
   return (
@@ -841,7 +943,7 @@ const ImportManager = () => {
                 </div>
               </div>
               <button 
-                onClick={() => { if(window.confirm('Excluir esta importação?')) handleDelete(imp.id); }}
+                onClick={() => setConfirmDelete(imp.id)}
                 className="w-10 h-10 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center lg:opacity-0 lg:group-hover:opacity-100 transition-all active:scale-90"
                 title="Excluir Importação"
               >
@@ -851,6 +953,115 @@ const ImportManager = () => {
           ))
         )}
       </div>
+
+      <AnimatePresence>
+        {confirmDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto">
+                <Trash2 size={32} />
+              </div>
+              <div>
+                <h4 className="text-xl font-bold text-slate-800">Excluir Importação</h4>
+                <p className="text-sm text-slate-400 mt-2">Tem certeza que deseja excluir este lote de importação? Todas as transações deste lote serão removidas.</p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmDelete(null)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-200 transition-colors">Cancelar</button>
+                <button 
+                  onClick={() => { deleteImport(confirmDelete); setConfirmDelete(null); }}
+                  className="flex-1 py-4 bg-rose-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-200 hover:bg-rose-600 transition-colors"
+                >Excluir</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {isImporting && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden"
+            >
+              <div className="p-8 space-y-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-black text-slate-800 tracking-tight">Importando Dados</h3>
+                  {!importResults && <Loader2 className="animate-spin text-emerald-500" size={24} />}
+                </div>
+
+                {!importResults ? (
+                  <div className="space-y-4">
+                    <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <motion.div 
+                        className="h-full bg-emerald-500"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${importProgress}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Processando arquivo...</span>
+                      <span className="text-xs font-black text-emerald-600">{importProgress}%</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+                        <div className="flex items-center gap-2 text-emerald-600 mb-1">
+                          <CheckCircle size={16} />
+                          <span className="text-[10px] font-bold uppercase tracking-widest">Sucesso</span>
+                        </div>
+                        <p className="text-2xl font-black text-emerald-700">{importResults.success}</p>
+                      </div>
+                      <div className="bg-rose-50 p-4 rounded-2xl border border-rose-100">
+                        <div className="flex items-center gap-2 text-rose-600 mb-1">
+                          <AlertCircle size={16} />
+                          <span className="text-[10px] font-bold uppercase tracking-widest">Erros</span>
+                        </div>
+                        <p className="text-2xl font-black text-rose-700">{importResults.errors}</p>
+                      </div>
+                    </div>
+
+                    {importResults.details.length > 0 && (
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 max-h-40 overflow-y-auto custom-scrollbar">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Detalhes</p>
+                        <ul className="space-y-1">
+                          {importResults.details.map((detail, idx) => (
+                            <li key={idx} className="text-[10px] text-slate-500 font-medium leading-relaxed">• {detail}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    <button 
+                      onClick={() => setIsImporting(false)}
+                      className="w-full py-4 bg-black text-white rounded-2xl font-bold text-sm shadow-xl shadow-black/10 active:scale-95 transition-all"
+                    >
+                      Concluir
+                    </button>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -859,6 +1070,7 @@ const CategoryManager = () => {
   const { categories, addCategory, updateCategory, deleteCategory } = useFinance();
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', icon: 'Wallet', color: '#000000', type: 'expense' as TransactionType });
 
   const availableIcons = [
@@ -866,8 +1078,6 @@ const CategoryManager = () => {
     'TrendingUp', 'ShoppingBag', 'Coffee', 'Home', 'Briefcase', 'Gift', 'Plane', 
     'Music', 'Film', 'Smartphone', 'Laptop', 'Zap', 'Droplets', 'Shield', 'Star', 'Heart'
   ];
-  const availableColors = ['#000000', '#ef4444', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6', '#ec4899', '#64748b', '#1e293b', '#475569'];
-
   const commonEmojis = ['💰', '🍕', '🚗', '🏠', '🎁', '✈️', '🎮', '🏥', '🛒', '💡', '📚', '🍿', '🏋️', '🐶', '👔'];
 
   const handleSave = () => {
@@ -925,7 +1135,7 @@ const CategoryManager = () => {
                   <Edit2 size={16} />
                 </button>
                 <button 
-                  onClick={() => { if(window.confirm('Excluir esta categoria?')) deleteCategory(cat.id); }} 
+                  onClick={() => setConfirmDelete(cat.id)} 
                   className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
                   title="Excluir Categoria"
                 >
@@ -936,6 +1146,39 @@ const CategoryManager = () => {
           );
         })}
       </div>
+
+      <AnimatePresence>
+        {confirmDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto">
+                <Trash2 size={32} />
+              </div>
+              <div>
+                <h4 className="text-xl font-bold text-slate-800">Excluir Categoria</h4>
+                <p className="text-sm text-slate-400 mt-2">Tem certeza que deseja excluir esta categoria? Transações associadas poderão ficar sem categoria.</p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmDelete(null)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-200 transition-colors">Cancelar</button>
+                <button 
+                  onClick={() => { deleteCategory(confirmDelete); setConfirmDelete(null); }}
+                  className="flex-1 py-4 bg-rose-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-200 hover:bg-rose-600 transition-colors"
+                >Excluir</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {(isAdding || isEditing) && (
@@ -949,7 +1192,7 @@ const CategoryManager = () => {
               initial={{ y: 100, scale: 0.95 }}
               animate={{ y: 0, scale: 1 }}
               exit={{ y: 100, scale: 0.95 }}
-              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto"
+              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto custom-scrollbar"
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -1000,21 +1243,14 @@ const CategoryManager = () => {
                   />
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Cor</label>
-                  <div className="flex flex-wrap gap-3">
-                    {availableColors.map(color => (
-                      <button
-                        key={color}
-                        onClick={() => setFormData({ ...formData, color })}
-                        className={cn(
-                          "w-8 h-8 rounded-full border-2 transition-all active:scale-75",
-                          formData.color === color ? "border-black scale-110 shadow-lg" : "border-transparent"
-                        )}
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </div>
+                  <input 
+                    type="color"
+                    value={formData.color}
+                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                    className="w-full h-14 bg-slate-100/50 border-none rounded-2xl p-1 focus:ring-2 focus:ring-black outline-none cursor-pointer"
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -1024,7 +1260,7 @@ const CategoryManager = () => {
                   </div>
                   
                   <div className="space-y-4">
-                    <div className="grid grid-cols-6 gap-2 max-h-40 overflow-y-auto p-1">
+                    <div className="grid grid-cols-6 gap-2 max-h-40 overflow-y-auto custom-scrollbar p-1">
                       {availableIcons.map(iconName => (
                         <button
                           key={iconName}
@@ -1085,15 +1321,19 @@ const CategoryManager = () => {
 };
 
 const CreditCardManager = () => {
-  const { creditCards, addCreditCard, updateCreditCard, deleteCreditCard, accounts } = useFinance();
+  const { creditCards, addCreditCard, updateCreditCard, deleteCreditCard, accounts, transactions } = useFinance();
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', brand: 'Visa', bank: '', limit: 0, closingDay: 1, dueDay: 10, color: '#000000' });
 
   const brands = ['Visa', 'Mastercard', 'Elo', 'American Express', 'Hipercard'];
 
   const handleSave = () => {
-    if (!formData.name || !formData.bank) return;
+    if (!formData.name || !formData.bank) {
+      alert("Por favor, preencha o nome e o banco do cartão.");
+      return;
+    }
     if (isEditing) {
       updateCreditCard(isEditing, formData);
     } else {
@@ -1143,6 +1383,12 @@ const CreditCardManager = () => {
                       <p className="text-sm font-bold text-slate-700">{formatCurrency(card.limit)}</p>
                     </div>
                     <div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">Fatura</p>
+                      <p className="text-sm font-bold text-rose-500">
+                        {formatCurrency(transactions.filter(t => t.creditCardId === card.id).reduce((acc, t) => acc + t.amount, 0))}
+                      </p>
+                    </div>
+                    <div>
                       <p className="text-[9px] font-bold text-slate-400 uppercase">Vencimento</p>
                       <p className="text-sm font-bold text-slate-700">Dia {card.dueDay}</p>
                     </div>
@@ -1157,7 +1403,7 @@ const CreditCardManager = () => {
                     <Edit2 size={16} />
                   </button>
                   <button 
-                    onClick={() => { if(window.confirm('Excluir este cartão?')) deleteCreditCard(card.id); }} 
+                    onClick={() => setConfirmDelete(card.id)} 
                     className="p-2 bg-rose-50 text-rose-400 rounded-xl hover:text-rose-600 hover:bg-rose-100 transition-colors"
                     title="Excluir Cartão"
                   >
@@ -1171,6 +1417,39 @@ const CreditCardManager = () => {
       </div>
 
       <AnimatePresence>
+        {confirmDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto">
+                <Trash2 size={32} />
+              </div>
+              <div>
+                <h4 className="text-xl font-bold text-slate-800">Excluir Cartão</h4>
+                <p className="text-sm text-slate-400 mt-2">Tem certeza que deseja excluir este cartão? Todas as transações vinculadas a ele serão afetadas.</p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmDelete(null)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-200 transition-colors">Cancelar</button>
+                <button 
+                  onClick={() => { deleteCreditCard(confirmDelete); setConfirmDelete(null); }}
+                  className="flex-1 py-4 bg-rose-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-200 hover:bg-rose-600 transition-colors"
+                >Excluir</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {(isAdding || isEditing) && (
           <motion.div 
             initial={{ opacity: 0 }} 
@@ -1182,7 +1461,7 @@ const CreditCardManager = () => {
               initial={{ y: 100, scale: 0.95 }} 
               animate={{ y: 0, scale: 1 }} 
               exit={{ y: 100, scale: 0.95 }} 
-              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto"
+              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto custom-scrollbar"
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -1303,6 +1582,7 @@ const AccountManager = () => {
   const { accounts, addAccount, updateAccount, deleteAccount } = useFinance();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', balance: 0, color: '#000000', icon: 'Wallet' });
 
   const handleSave = () => {
@@ -1359,7 +1639,7 @@ const AccountManager = () => {
                 <Edit2 size={18} />
               </button>
               <button 
-                onClick={() => { if(window.confirm('Excluir esta conta?')) deleteAccount(acc.id); }}
+                onClick={() => setConfirmDelete(acc.id)}
                 className="w-10 h-10 bg-rose-50 text-rose-400 rounded-xl flex items-center justify-center hover:text-rose-600 transition-colors"
                 title="Excluir Conta"
               >
@@ -1369,6 +1649,39 @@ const AccountManager = () => {
           </div>
         ))}
       </div>
+
+      <AnimatePresence>
+        {confirmDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto">
+                <Trash2 size={32} />
+              </div>
+              <div>
+                <h4 className="text-xl font-bold text-slate-800">Excluir Conta</h4>
+                <p className="text-sm text-slate-400 mt-2">Tem certeza que deseja excluir esta conta? O saldo total será recalculado.</p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmDelete(null)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-200 transition-colors">Cancelar</button>
+                <button 
+                  onClick={() => { deleteAccount(confirmDelete); setConfirmDelete(null); }}
+                  className="flex-1 py-4 bg-rose-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-200 hover:bg-rose-600 transition-colors"
+                >Excluir</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isAdding && (
@@ -1382,7 +1695,7 @@ const AccountManager = () => {
               initial={{ y: 100, scale: 0.95 }}
               animate={{ y: 0, scale: 1 }}
               exit={{ y: 100, scale: 0.95 }}
-              className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20"
+              className="bg-white/95 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto custom-scrollbar"
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -1464,9 +1777,8 @@ const TagManager = () => {
   const { tags, addTag, updateTag, deleteTag } = useFinance();
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [formData, setFormData] = useState({ name: '', color: '#000000' });
-
-  const availableColors = ['#000000', '#ef4444', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6', '#ec4899', '#64748b'];
 
   const handleSave = () => {
     if (!formData.name) return;
@@ -1515,7 +1827,7 @@ const TagManager = () => {
                   <Edit2 size={12} />
                 </button>
                 <button 
-                  onClick={() => { if(window.confirm('Excluir esta tag?')) deleteTag(tag.id); }} 
+                  onClick={() => setConfirmDelete(tag.id)} 
                   className="hover:text-black/50 transition-colors"
                   title="Excluir Tag"
                 >
@@ -1526,6 +1838,39 @@ const TagManager = () => {
           ))
         )}
       </div>
+
+      <AnimatePresence>
+        {confirmDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto">
+                <Trash2 size={32} />
+              </div>
+              <div>
+                <h4 className="text-xl font-bold text-slate-800">Excluir Tag</h4>
+                <p className="text-sm text-slate-400 mt-2">Tem certeza que deseja excluir esta tag? Ela será removida de todas as transações.</p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmDelete(null)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-200 transition-colors">Cancelar</button>
+                <button 
+                  onClick={() => { deleteTag(confirmDelete); setConfirmDelete(null); }}
+                  className="flex-1 py-4 bg-rose-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-200 hover:bg-rose-600 transition-colors"
+                >Excluir</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {(isAdding || isEditing) && (
@@ -1539,7 +1884,7 @@ const TagManager = () => {
               initial={{ y: 100, scale: 0.95 }} 
               animate={{ y: 0, scale: 1 }} 
               exit={{ y: 100, scale: 0.95 }} 
-              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto"
+              className="bg-white/90 backdrop-blur-xl w-full max-w-md rounded-[3rem] p-8 pb-12 space-y-6 shadow-2xl border border-white/20 max-h-[90vh] overflow-y-auto custom-scrollbar"
             >
               <div className="flex items-center justify-between">
                 <div>
@@ -1566,21 +1911,14 @@ const TagManager = () => {
                   />
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase px-1">Cor da Tag</label>
-                  <div className="flex flex-wrap gap-3">
-                    {availableColors.map(color => (
-                      <button 
-                        key={color} 
-                        onClick={() => setFormData({ ...formData, color })} 
-                        className={cn(
-                          "w-8 h-8 rounded-full border-2 transition-all active:scale-75", 
-                          formData.color === color ? "border-black scale-110 shadow-lg" : "border-transparent"
-                        )} 
-                        style={{ backgroundColor: color }} 
-                      />
-                    ))}
-                  </div>
+                  <input 
+                    type="color"
+                    value={formData.color}
+                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                    className="w-full h-14 bg-slate-100/50 border-none rounded-2xl p-1 focus:ring-2 focus:ring-black outline-none cursor-pointer"
+                  />
                 </div>
               </div>
 
@@ -2003,35 +2341,53 @@ const ReportGenerator = () => {
 const ChartsTab = () => {
   const { transactions, tags, categories, creditCards } = useFinance();
 
+  const now = useMemo(() => new Date(), []);
+  const monthlyTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      try {
+        const d = parseISO(t.date);
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      } catch (e) {
+        return false;
+      }
+    });
+  }, [transactions, now]);
+
   // Data for Tags
-  const tagData = tags.map(tag => {
-    const amount = transactions
-      .filter(t => t.type === 'expense' && t.tags?.includes(tag.id))
-      .reduce((acc, curr) => acc + curr.amount, 0);
-    return { name: tag.name, amount, color: tag.color };
-  }).filter(d => d.amount > 0)
-    .sort((a, b) => b.amount - a.amount);
+  const tagData = useMemo(() => {
+    return tags.map(tag => {
+      const amount = monthlyTransactions
+        .filter(t => t.type === 'expense' && t.tags?.includes(tag.id))
+        .reduce((acc, curr) => acc + curr.amount, 0);
+      return { name: tag.name, amount, color: tag.color };
+    }).filter(d => d.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+  }, [tags, monthlyTransactions]);
 
   // Data for Categories (Sandwich/Donut Chart)
-  const categoryData = categories
-    .filter(c => c.type === 'expense')
-    .map(c => {
-      const amount = transactions
-        .filter(t => t.type === 'expense' && t.category === c.name)
-        .reduce((acc, curr) => acc + curr.amount, 0);
-      return { name: c.name, value: amount, color: c.color };
-    })
-    .filter(d => d.value > 0)
-    .sort((a, b) => b.value - a.value);
+  const categoryData = useMemo(() => {
+    return categories
+      .filter(c => c.type === 'expense')
+      .map(c => {
+        const amount = monthlyTransactions
+          .filter(t => t.type === 'expense' && t.category === c.name)
+          .reduce((acc, curr) => acc + curr.amount, 0);
+        return { name: c.name, value: amount, color: c.color };
+      })
+      .filter(d => d.value > 0)
+      .sort((a, b) => b.value - a.value);
+  }, [categories, monthlyTransactions]);
 
   // Data for Credit Cards
-  const cardData = creditCards.map(card => {
-    const amount = transactions
-      .filter(t => t.type === 'expense' && t.creditCardId === card.id)
-      .reduce((acc, curr) => acc + curr.amount, 0);
-    return { name: card.name, amount, color: card.color };
-  }).filter(d => d.amount > 0)
-    .sort((a, b) => b.amount - a.amount);
+  const cardData = useMemo(() => {
+    return creditCards.map(card => {
+      const amount = monthlyTransactions
+        .filter(t => t.type === 'expense' && t.creditCardId === card.id)
+        .reduce((acc, curr) => acc + curr.amount, 0);
+      return { name: card.name, amount, color: card.color };
+    }).filter(d => d.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+  }, [creditCards, monthlyTransactions]);
 
   return (
     <div className="pt-12 pb-24 lg:pb-0 space-y-10">
@@ -2063,7 +2419,7 @@ const ChartsTab = () => {
           ) : (
             <div className="flex flex-col items-center gap-8">
               <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <RePieChart>
                     <Pie
                       data={categoryData}
@@ -2121,7 +2477,7 @@ const ChartsTab = () => {
           ) : (
             <div className="space-y-8">
               <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <BarChart data={tagData} layout="vertical" margin={{ left: 0, right: 30 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                     <XAxis type="number" hide />
@@ -2184,7 +2540,7 @@ const ChartsTab = () => {
         ) : (
           <div className="space-y-8">
             <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart data={cardData} layout="vertical" margin={{ left: 0, right: 30 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                   <XAxis type="number" hide />
@@ -2227,17 +2583,199 @@ const ChartsTab = () => {
   );
 };
 
+const TransactionCard = ({ 
+  t, 
+  categories, 
+  creditCards, 
+  tags, 
+  onEdit, 
+  onDelete 
+}: { 
+  t: Transaction; 
+  categories: Category[]; 
+  creditCards: CreditCard[]; 
+  tags: Tag[]; 
+  onEdit: (t: Transaction) => void; 
+  onDelete: (id: string) => void; 
+  key?: React.Key;
+}) => {
+  const categoryObj = categories.find(c => c.name === t.category);
+  const card = creditCards.find(c => c.id === t.creditCardId);
+  const transactionTags = tags.filter(tag => t.tags?.includes(tag.id));
+  
+  return (
+    <div className="bg-white p-5 rounded-[2rem] flex items-center justify-between card-shadow border border-slate-50 group transition-all hover:bg-slate-50">
+      <div className="flex items-center gap-4">
+        <div 
+          className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-sm"
+          style={{ backgroundColor: categoryObj?.color || '#94a3b8' }}
+        >
+          <CategoryIcon icon={categoryObj?.icon || 'Wallet'} size={22} />
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <p className="font-bold text-slate-800 text-sm">{t.description}</p>
+            {card && (
+              <span className="text-[8px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tighter">
+                {card.name}
+              </span>
+            )}
+            {t.installmentId && (
+              <span className="text-[8px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tighter">
+                {t.installmentIndex}/{t.installments}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col gap-1 mt-1">
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+              {format(parseISO(t.date), "dd 'de' MMMM 'às' HH:mm", { locale: ptBR })}
+            </p>
+            {transactionTags.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {transactionTags.map(tag => (
+                  <span key={tag.id} className="text-[8px] px-1.5 py-0.5 rounded-md text-white font-bold" style={{ backgroundColor: tag.color }}>
+                    {tag.name}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-col items-end gap-2">
+        <p className={cn(
+          "font-black text-base",
+          t.type === 'income' ? "text-emerald-500" : "text-rose-500"
+        )}>
+          {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+        </p>
+        <div className="flex items-center gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+          <button 
+            onClick={() => onEdit(t)}
+            className="p-3 text-slate-300 hover:text-black transition-colors"
+            title="Editar Transação"
+          >
+            <Edit2 size={18} />
+          </button>
+          <button 
+            onClick={() => onDelete(t.id)}
+            className="p-3 text-slate-300 hover:text-rose-500 transition-colors"
+            title="Excluir Transação"
+          >
+            <Trash2 size={18} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const HistoryTab = ({ onEdit }: { onEdit: (t: Transaction) => void }) => {
   const { transactions, categories, tags, creditCards, deleteTransaction } = useFinance();
   const [searchQuery, setSearchQuery] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({});
 
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => 
-      t.description.toLowerCase().includes(searchQuery.toLowerCase())
-    ).sort((a, b) => 
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-  }, [transactions, searchQuery]);
+  const now = useMemo(() => new Date(), []);
+
+  const nextMonthDate = useMemo(() => {
+    return new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  }, [now]);
+
+  const nextMonthLabel = useMemo(() => {
+    const raw = format(nextMonthDate, 'MMMM yyyy', { locale: ptBR });
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }, [nextMonthDate]);
+
+  const futureMonthTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      try {
+        const d = parseISO(t.date);
+        const isNext = d.getMonth() === nextMonthDate.getMonth() && d.getFullYear() === nextMonthDate.getFullYear();
+        const matchesSearch = t.description.toLowerCase().includes(searchQuery.toLowerCase());
+        return isNext && matchesSearch;
+      } catch {
+        return false;
+      }
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [transactions, searchQuery, nextMonthDate]);
+
+  const currentMonthTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      try {
+        const d = parseISO(t.date);
+        const isCurrent = d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        const matchesSearch = t.description.toLowerCase().includes(searchQuery.toLowerCase());
+        return isCurrent && matchesSearch;
+      } catch {
+        return false;
+      }
+    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [transactions, searchQuery, now]);
+
+  const previousMonthsGroups = useMemo(() => {
+    const prev = transactions.filter(t => {
+      try {
+        const d = parseISO(t.date);
+        const isCurrent = d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        const isNext = d.getMonth() === nextMonthDate.getMonth() && d.getFullYear() === nextMonthDate.getFullYear();
+        const isBefore = d.getTime() < now.getTime() && !isCurrent && !isNext;
+        const matchesSearch = t.description.toLowerCase().includes(searchQuery.toLowerCase());
+        return isBefore && matchesSearch;
+      } catch {
+        return false;
+      }
+    });
+
+    const groups: Record<string, { 
+      monthKey: string; 
+      label: string; 
+      transactions: Transaction[]; 
+      income: number; 
+      expense: number; 
+    }> = {};
+
+    prev.forEach(t => {
+      try {
+        const d = parseISO(t.date);
+        const sortKey = format(d, 'yyyy-MM');
+        const labelRaw = format(d, 'MMMM yyyy', { locale: ptBR });
+        const label = labelRaw.charAt(0).toUpperCase() + labelRaw.slice(1);
+
+        if (!groups[sortKey]) {
+          groups[sortKey] = {
+            monthKey: sortKey,
+            label,
+            transactions: [],
+            income: 0,
+            expense: 0
+          };
+        }
+
+        groups[sortKey].transactions.push(t);
+        if (t.type === 'income') {
+          groups[sortKey].income += t.amount;
+        } else {
+          groups[sortKey].expense += t.amount;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    });
+
+    Object.values(groups).forEach(g => {
+      g.transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    });
+
+    return Object.values(groups).sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+  }, [transactions, searchQuery, now, nextMonthDate]);
+
+  const toggleMonth = (monthKey: string) => {
+    setExpandedMonths(prev => ({
+      ...prev,
+      [monthKey]: !prev[monthKey]
+    }));
+  };
 
   return (
     <div className="pt-12 pb-24 lg:pb-0 space-y-8">
@@ -2259,88 +2797,270 @@ const HistoryTab = ({ onEdit }: { onEdit: (t: Transaction) => void }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {filteredTransactions.length === 0 ? (
-          <div className="lg:col-span-2 bg-white p-12 rounded-[3rem] text-center card-shadow border border-slate-50">
+      {/* Seção 0: Mês Futuro (Próximo Mês) */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-indigo-600 font-bold text-sm uppercase tracking-wider flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+            Mês Futuro ({nextMonthLabel})
+          </h3>
+          {futureMonthTransactions.length > 0 && (
+            <span className="text-xs bg-indigo-50 text-indigo-600 font-bold px-3 py-1 rounded-full">
+              {futureMonthTransactions.length} {futureMonthTransactions.length === 1 ? 'lançamento' : 'lançamentos'}
+            </span>
+          )}
+        </div>
+
+        {futureMonthTransactions.length === 0 ? (
+          <div className="bg-slate-50/50 p-6 rounded-[2rem] text-center border border-dashed border-slate-200">
+            <p className="text-slate-400 text-xs font-medium">Nenhum lançamento previsto para o próximo mês.</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-[2rem] border border-slate-50 card-shadow overflow-hidden transition-all duration-300">
+            <button
+              onClick={() => toggleMonth('next_month')}
+              className="w-full p-6 flex flex-col sm:flex-row sm:items-center justify-between text-left hover:bg-slate-50/55 transition-colors gap-4"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+                  <Calendar size={18} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 text-sm lg:text-base">Planejado para {nextMonthLabel}</h4>
+                  <p className="text-slate-400 text-xs mt-0.5">
+                    Clique para ver os valores e parcelas programados para o próximo mês
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6 self-end sm:self-auto">
+                <div className="flex items-center gap-4 text-xs font-bold text-right">
+                  {(() => {
+                    const inc = futureMonthTransactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
+                    const exp = futureMonthTransactions.filter(t => t.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
+                    return (
+                      <>
+                        {inc > 0 && (
+                          <div className="text-emerald-600">
+                            <span className="text-[8px] uppercase text-slate-400 font-bold tracking-wider block">Prev. Receitas</span>
+                            +{formatCurrency(inc)}
+                          </div>
+                        )}
+                        {exp > 0 && (
+                          <div className="text-rose-600">
+                            <span className="text-[8px] uppercase text-slate-400 font-bold tracking-wider block">Prev. Despesas</span>
+                            -{formatCurrency(exp)}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+
+                <div className={cn(
+                  "p-2 bg-indigo-50 border border-indigo-100 rounded-full text-indigo-600 transition-transform duration-300",
+                  expandedMonths['next_month'] ? "rotate-90" : ""
+                )}>
+                  <ChevronRight size={16} />
+                </div>
+              </div>
+            </button>
+
+            <AnimatePresence initial={false}>
+              {expandedMonths['next_month'] && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: "easeInOut" }}
+                  className="border-t border-slate-50 bg-indigo-50/5"
+                >
+                  <div className="p-6 space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {futureMonthTransactions.map((t) => (
+                        <TransactionCard
+                          key={t.id}
+                          t={t}
+                          categories={categories}
+                          creditCards={creditCards}
+                          tags={tags}
+                          onEdit={onEdit}
+                          onDelete={setConfirmDelete}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
+
+      {/* Seção 1: Mês Atual */}
+      <div className="space-y-4">
+        <h3 className="text-slate-800 font-bold text-sm uppercase tracking-wider px-2">
+          Mês Atual ({format(now, 'MMMM yyyy', { locale: ptBR }).charAt(0).toUpperCase() + format(now, 'MMMM yyyy', { locale: ptBR }).slice(1)})
+        </h3>
+        
+        {currentMonthTransactions.length === 0 ? (
+          <div className="bg-white p-12 rounded-[3rem] text-center card-shadow border border-slate-50">
             <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200 mb-4">
               <History size={32} />
             </div>
-            <p className="text-slate-400 text-sm font-medium">Nenhuma transação encontrada.</p>
+            <p className="text-slate-400 text-sm font-medium">Nenhuma transação encontrada no mês atual.</p>
           </div>
         ) : (
-          filteredTransactions.map((t) => {
-            const categoryObj = categories.find(c => c.name === t.category);
-            const card = creditCards.find(c => c.id === t.creditCardId);
-            const transactionTags = tags.filter(tag => t.tags?.includes(tag.id));
-            
-            return (
-              <div key={t.id} className="bg-white p-5 rounded-[2rem] flex items-center justify-between card-shadow border border-slate-50 group transition-all hover:bg-slate-50">
-                <div className="flex items-center gap-4">
-                  <div 
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-sm"
-                    style={{ backgroundColor: categoryObj?.color || '#94a3b8' }}
-                  >
-                    <CategoryIcon icon={categoryObj?.icon || 'Wallet'} size={22} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-slate-800 text-sm">{t.description}</p>
-                      {card && (
-                        <span className="text-[8px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tighter">
-                          {card.name}
-                        </span>
-                      )}
-                      {t.installmentId && (
-                        <span className="text-[8px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tighter">
-                          {t.installmentIndex}/{t.installments}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-1 mt-1">
-                      <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                        {format(parseISO(t.date), "dd 'de' MMMM 'às' HH:mm", { locale: ptBR })}
-                      </p>
-                      {transactionTags.length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {transactionTags.map(tag => (
-                            <span key={tag.id} className="text-[8px] px-1.5 py-0.5 rounded-md text-white font-bold" style={{ backgroundColor: tag.color }}>
-                              {tag.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-2">
-                  <p className={cn(
-                    "font-black text-base",
-                    t.type === 'income' ? "text-emerald-500" : "text-rose-500"
-                  )}>
-                    {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                  </p>
-                  <div className="flex items-center gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-                    <button 
-                      onClick={() => onEdit(t)}
-                      className="p-3 text-slate-300 hover:text-black transition-colors"
-                      title="Editar Transação"
-                    >
-                      <Edit2 size={18} />
-                    </button>
-                    <button 
-                      onClick={() => { if(window.confirm('Excluir esta transação?')) deleteTransaction(t.id); }}
-                      className="p-3 text-slate-300 hover:text-rose-500 transition-colors"
-                      title="Excluir Transação"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {currentMonthTransactions.map((t) => (
+              <TransactionCard
+                key={t.id}
+                t={t}
+                categories={categories}
+                creditCards={creditCards}
+                tags={tags}
+                onEdit={onEdit}
+                onDelete={setConfirmDelete}
+              />
+            ))}
+          </div>
         )}
       </div>
+
+      {/* Seção 2: Meses Anteriores */}
+      {previousMonthsGroups.length > 0 && (
+        <div className="space-y-4 pt-4">
+          <h3 className="text-slate-800 font-bold text-sm uppercase tracking-wider px-2">
+            Meses Anteriores
+          </h3>
+          <div className="space-y-4">
+            {previousMonthsGroups.map((group) => {
+              const isExpanded = !!expandedMonths[group.monthKey];
+              return (
+                <div key={group.monthKey} className="bg-white rounded-[2rem] border border-slate-50 card-shadow overflow-hidden transition-all duration-300">
+                  <button
+                    onClick={() => toggleMonth(group.monthKey)}
+                    className="w-full p-6 flex flex-col sm:flex-row sm:items-center justify-between text-left hover:bg-slate-50/55 transition-colors gap-4"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-500">
+                        <History size={18} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-slate-800 text-sm lg:text-base">{group.label}</h4>
+                        <p className="text-slate-400 text-xs mt-0.5">
+                          {group.transactions.length} {group.transactions.length === 1 ? 'transação' : 'transações'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-6 self-end sm:self-auto">
+                      <div className="flex items-center gap-4 text-xs font-bold text-right">
+                        {group.income > 0 && (
+                          <div className="text-emerald-600">
+                            <span className="text-[8px] uppercase text-slate-400 font-bold tracking-wider block">Receitas</span>
+                            +{formatCurrency(group.income)}
+                          </div>
+                        )}
+                        {group.expense > 0 && (
+                          <div className="text-rose-600">
+                            <span className="text-[8px] uppercase text-slate-400 font-bold tracking-wider block">Despesas</span>
+                            -{formatCurrency(group.expense)}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className={cn(
+                        "p-2 bg-slate-50 border border-slate-100 rounded-full text-slate-500 transition-transform duration-300",
+                        isExpanded ? "rotate-90" : ""
+                      )}>
+                        <ChevronRight size={16} />
+                      </div>
+                    </div>
+                  </button>
+
+                  <AnimatePresence initial={false}>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: "easeInOut" }}
+                        className="border-t border-slate-50 bg-slate-50/30"
+                      >
+                        <div className="p-6 space-y-4">
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            {group.transactions.map((t) => (
+                              <TransactionCard
+                                key={t.id}
+                                t={t}
+                                categories={categories}
+                                creditCards={creditCards}
+                                tags={tags}
+                                onEdit={onEdit}
+                                onDelete={setConfirmDelete}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {previousMonthsGroups.length === 0 && searchQuery && currentMonthTransactions.length === 0 && (
+        <div className="bg-white p-12 rounded-[3.5rem] text-center card-shadow border border-slate-50">
+          <p className="text-slate-400 text-sm font-medium">Nenhuma transação encontrada de períodos anteriores.</p>
+        </div>
+      )}
+
+      <AnimatePresence>
+        {confirmDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-sm w-full shadow-2xl border border-slate-100 text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto">
+                <Trash2 size={32} />
+              </div>
+              <div>
+                <h4 className="text-xl font-bold text-slate-800">Confirmar Exclusão</h4>
+                <p className="text-sm text-slate-400 mt-2">Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita.</p>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setConfirmDelete(null)}
+                  className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm hover:bg-slate-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => {
+                    deleteTransaction(confirmDelete);
+                    setConfirmDelete(null);
+                  }}
+                  className="flex-1 py-4 bg-rose-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-rose-200 hover:bg-rose-600 transition-colors"
+                >
+                  Excluir
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -2517,8 +3237,8 @@ const Sidebar = ({ activeTab, setActiveTab, setIsAdding }: { activeTab: string, 
   return (
     <aside className="hidden lg:flex flex-col w-72 bg-white border-r border-slate-100 h-screen sticky top-0 p-8">
       <div className="flex items-center gap-3 mb-12 px-2">
-        <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center text-white shadow-xl shadow-black/10">
-          <Wallet size={28} />
+        <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center text-white shadow-xl shadow-black/10 overflow-hidden">
+          <img src="https://i.imgur.com/pYENenK.png" alt="Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
         </div>
         <div>
           <h1 className="font-black text-xl tracking-tight text-slate-900">Meu Financeiro</h1>

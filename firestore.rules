@@ -1,0 +1,153 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global safety net catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable global helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Master admins Concept
+    function isAdmin() {
+      return isSignedIn() && (request.auth.token.email == 'vitorrabelopires@gmail.com' || request.auth.token.email == 'admin@meufinanceiro.com');
+    }
+
+    // Entity validator: Transaction properties must match expected schemas
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['id', 'description', 'amount', 'date', 'category', 'type', 'accountId', 'userId'])
+        && data.id is string && data.id.size() <= 128
+        && data.description is string && data.description.size() <= 256
+        && data.amount is number
+        && data.date is string && data.date.size() <= 32
+        && data.category is string && data.category.size() <= 64
+        && data.type is string && (data.type == 'expense' || data.type == 'income')
+        && data.accountId is string && data.accountId.size() <= 128
+        && data.userId == request.auth.uid;
+    }
+
+    // Category shape validator
+    function isValidCategory(data) {
+      return data.keys().hasAll(['id', 'name', 'icon', 'color', 'type'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 64
+        && data.icon is string && data.icon.size() <= 64
+        && data.color is string && data.color.size() <= 16
+        && data.type is string && (data.type == 'expense' || data.type == 'income')
+        && (!data.keys().hasAny(['userId']) || data.userId == request.auth.uid || data.userId == null);
+    }
+
+    // Account shape validator
+    function isValidAccount(data) {
+      return data.keys().hasAll(['id', 'name', 'balance', 'color', 'icon'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 64
+        && data.balance is number
+        && data.color is string && data.color.size() <= 16
+        && data.icon is string && data.icon.size() <= 64
+        && (!data.keys().hasAny(['userId']) || data.userId == request.auth.uid || data.userId == null);
+    }
+
+    // Credit card shape validator
+    function isValidCreditCard(data) {
+      return data.keys().hasAll(['id', 'name', 'brand', 'bank', 'limit', 'closingDay', 'dueDay', 'color'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 64
+        && data.brand is string && data.brand.size() <= 32
+        && data.bank is string && data.bank.size() <= 64
+        && data.limit is number
+        && data.closingDay is int && data.closingDay >= 1 && data.closingDay <= 31
+        && data.dueDay is int && data.dueDay >= 1 && data.dueDay <= 31
+        && data.color is string && data.color.size() <= 16
+        && (!data.keys().hasAny(['userId']) || data.userId == request.auth.uid || data.userId == null);
+    }
+
+    // Tag validator
+    function isValidTag(data) {
+      return data.keys().hasAll(['id', 'name', 'color'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 64
+        && data.color is string && data.color.size() <= 16
+        && (!data.keys().hasAny(['userId']) || data.userId == request.auth.uid || data.userId == null);
+    }
+
+    // NotificationSettings validator
+    function isValidNotificationSettings(data) {
+      return data.keys().hasAll(['cardDueReminders', 'transactionReminders', 'reminderTime', 'daysBeforeDue'])
+        && data.cardDueReminders is bool
+        && data.transactionReminders is bool
+        && data.reminderTime is string && data.reminderTime.size() <= 16
+        && data.daysBeforeDue is int
+        && (!data.keys().hasAny(['userId']) || data.userId == request.auth.uid || data.userId == null);
+    }
+
+    // Transactions matching and constraints
+    match /transactions/{transactionId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(transactionId) && isValidTransaction(incoming());
+      allow update: if isSignedIn() && isValidId(transactionId) && isValidTransaction(incoming()) && (existing().userId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Categories matching and constraints
+    match /categories/{categoryId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || existing().userId == null || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.userId == null || isAdmin());
+      allow create: if isSignedIn() && isValidId(categoryId) && isValidCategory(incoming());
+      allow update: if isSignedIn() && isValidId(categoryId) && isValidCategory(incoming()) && (existing().userId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Accounts matching and constraints
+    match /accounts/{accountId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || existing().userId == null || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.userId == null || isAdmin());
+      allow create: if isSignedIn() && isValidId(accountId) && isValidAccount(incoming());
+      allow update: if isSignedIn() && isValidId(accountId) && isValidAccount(incoming()) && (existing().userId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Credit Cards matching and constraints
+    match /credit_cards/{creditCardId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || existing().userId == null || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.userId == null || isAdmin());
+      allow create: if isSignedIn() && isValidId(creditCardId) && isValidCreditCard(incoming());
+      allow update: if isSignedIn() && isValidId(creditCardId) && isValidCreditCard(incoming()) && (existing().userId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Tags matching and constraints
+    match /tags/{tagId} {
+      allow get: if isSignedIn() && (existing().userId == request.auth.uid || existing().userId == null || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.userId == null || isAdmin());
+      allow create: if isSignedIn() && isValidId(tagId) && isValidTag(incoming());
+      allow update: if isSignedIn() && isValidId(tagId) && isValidTag(incoming()) && (existing().userId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Notification settings matching and constraints
+    match /notification_settings/{userId} {
+      allow get: if isSignedIn() && (userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(userId) && userId == request.auth.uid && isValidNotificationSettings(incoming());
+      allow update: if isSignedIn() && isValidId(userId) && (userId == request.auth.uid || isAdmin()) && isValidNotificationSettings(incoming());
+      allow delete: if isSignedIn() && (userId == request.auth.uid || isAdmin());
+    }
+  }
+}

@@ -5,6 +5,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function isUserAdmin(email?: string | null): boolean {
+  if (!email) return false;
+  const lowerEmail = email.toLowerCase();
+  return lowerEmail === 'admin@meufinanceiro.com' || lowerEmail === 'vitorrabelopires@gmail.com';
+}
+
 export function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -23,7 +29,7 @@ export interface Transaction {
   type: TransactionType;
   accountId: string;
   tags?: string[];
-  creditCardId?: string;
+  creditCardId?: string | null;
   installments?: number;
   installmentIndex?: number;
   installmentId?: string;

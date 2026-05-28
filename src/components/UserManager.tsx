@@ -8,6 +8,11 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword 
 } from '../firebase';
+import { 
+  updatePassword, 
+  reauthenticateWithCredential, 
+  EmailAuthProvider 
+} from 'firebase/auth';
 import { User, LogIn, LogOut, Mail, Lock, Chrome, UserPlus, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../types';
@@ -19,6 +24,14 @@ export const UserManager = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // States for Password Change
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState<string | null>(null);
+  const [passwordChangeError, setPasswordChangeError] = useState<string | null>(null);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,6 +70,85 @@ export const UserManager = () => {
     }
   };
 
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordChangeError(null);
+    setPasswordChangeSuccess(null);
+
+    const currentUser = auth.currentUser;
+    const isAdmin = currentUser?.email?.toLowerCase() === 'admin@meufinanceiro.com';
+
+    let finalCurrentPassword = currentPassword;
+    let finalNewPassword = newPassword;
+    let finalConfirmPassword = confirmPassword;
+
+    // Map "admin" / "Itaintme01" to "Itaintme01", but also support "adminadmin" for backward compatibility
+    if (isAdmin && (currentPassword === 'admin' || currentPassword === 'Itaintme01')) {
+      finalCurrentPassword = 'Itaintme01';
+    } else if (isAdmin && currentPassword === 'adminadmin') {
+      finalCurrentPassword = 'adminadmin';
+    }
+
+    if (isAdmin && (newPassword === 'admin' || newPassword === 'Itaintme01')) {
+      finalNewPassword = 'Itaintme01';
+    }
+    if (isAdmin && (confirmPassword === 'admin' || confirmPassword === 'Itaintme01')) {
+      finalConfirmPassword = 'Itaintme01';
+    }
+
+    if (finalNewPassword !== finalConfirmPassword) {
+      setPasswordChangeError('As novas senhas não coincidem.');
+      return;
+    }
+
+    if (finalNewPassword.length < 6) {
+      setPasswordChangeError('A nova senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (currentUser && currentUser.email) {
+        // Reauthenticate first (Firebase security requirement for sensitive account changes)
+        try {
+          const credential = EmailAuthProvider.credential(currentUser.email, finalCurrentPassword);
+          await reauthenticateWithCredential(currentUser, credential);
+        } catch (authErr) {
+          // If the mapped 'Itaintme01' failed, try 'adminadmin' fallback as well for compatibility
+          if (isAdmin && finalCurrentPassword === 'Itaintme01') {
+            try {
+              const fallbackCred = EmailAuthProvider.credential(currentUser.email, 'adminadmin');
+              await reauthenticateWithCredential(currentUser, fallbackCred);
+            } catch (fbErr) {
+              throw authErr; // throw original
+            }
+          } else {
+            throw authErr;
+          }
+        }
+        
+        // Update password
+        await updatePassword(currentUser, finalNewPassword);
+        setPasswordChangeSuccess('Senha alterada com sucesso!');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setTimeout(() => setShowPasswordChange(false), 2000);
+      } else {
+        setPasswordChangeError('Usuário não autenticado ou inválido.');
+      }
+    } catch (err: any) {
+      console.error("Erro ao alterar senha:", err);
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setPasswordChangeError('A senha atual fornecida está incorreta.');
+      } else {
+        setPasswordChangeError(err.message || 'Ocorreu um erro ao alterar a senha.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (user) {
     return (
       <div className="bg-white p-8 rounded-[2.5rem] card-shadow space-y-8 border border-slate-50">
@@ -88,8 +180,99 @@ export const UserManager = () => {
             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Status da Conta</span>
             <span className="text-xs font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-full">Ativa</span>
           </div>
+
+          <button 
+            type="button"
+            onClick={() => {
+              setShowPasswordChange(!showPasswordChange);
+              setPasswordChangeError(null);
+              setPasswordChangeSuccess(null);
+            }}
+            className="w-full py-4 px-6 bg-slate-50 text-slate-700 rounded-2xl text-sm font-black flex items-center justify-center gap-3 active:scale-95 transition-all hover:bg-slate-100"
+          >
+            <Lock size={18} /> {showPasswordChange ? 'Ocultar Alterar Senha' : 'Alterar Senha Admin / Conta'}
+          </button>
+
+          <AnimatePresence>
+            {showPasswordChange && (
+              <motion.form 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                onSubmit={handlePasswordChange}
+                className="space-y-4 pt-4 border-t border-slate-50 overflow-hidden"
+              >
+                <div className="space-y-3">
+                  <div className="relative group">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input 
+                      type="password" 
+                      placeholder="Senha Atual" 
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      required
+                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl text-base font-bold text-slate-800 placeholder:text-slate-300 focus:ring-2 focus:ring-black outline-none transition-all shadow-sm"
+                    />
+                  </div>
+
+                  <div className="relative group">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input 
+                      type="password" 
+                      placeholder="Nova Senha" 
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl text-base font-bold text-slate-800 placeholder:text-slate-300 focus:ring-2 focus:ring-black outline-none transition-all shadow-sm"
+                    />
+                  </div>
+
+                  <div className="relative group">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                    <input 
+                      type="password" 
+                      placeholder="Confirmar Nova Senha" 
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl text-base font-bold text-slate-800 placeholder:text-slate-300 focus:ring-2 focus:ring-black outline-none transition-all shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                {passwordChangeSuccess && (
+                  <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                    <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest text-center">
+                      {passwordChangeSuccess}
+                    </p>
+                  </div>
+                )}
+
+                {passwordChangeError && (
+                  <div className="p-3 bg-rose-50 rounded-xl border border-rose-100">
+                    <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest text-center">
+                      {passwordChangeError}
+                    </p>
+                  </div>
+                )}
+
+                <button 
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-4 bg-black text-white rounded-2xl text-sm font-black shadow-xl active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
+                >
+                  {loading ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    'Confirmar Alteração'
+                  )}
+                </button>
+              </motion.form>
+            )}
+          </AnimatePresence>
           
           <button 
+            type="button"
             onClick={handleLogout}
             className="w-full py-4 px-6 bg-rose-50 text-rose-500 rounded-2xl text-sm font-black flex items-center justify-center gap-3 active:scale-95 transition-all hover:bg-rose-100"
           >

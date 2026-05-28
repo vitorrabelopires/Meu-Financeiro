@@ -1,0 +1,120 @@
+{
+  "entities": {
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial transaction entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "category": { "type": "string" },
+        "type": { "type": "string", "enum": ["expense", "income"] },
+        "accountId": { "type": "string" },
+        "tags": { "type": "array" },
+        "creditCardId": { "type": "string" },
+        "userId": { "type": "string" },
+        "importId": { "type": "string" },
+        "importDate": { "type": "string" }
+      },
+      "required": ["id", "description", "amount", "date", "category", "type", "accountId", "userId"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Transaction category definition",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "icon": { "type": "string" },
+        "color": { "type": "string" },
+        "type": { "type": "string", "enum": ["expense", "income"] },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "name", "icon", "color", "type"]
+    },
+    "Account": {
+      "title": "Account",
+      "description": "Financial account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "balance": { "type": "number" },
+        "color": { "type": "string" },
+        "icon": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "name", "balance", "color", "icon"]
+    },
+    "CreditCard": {
+      "title": "CreditCard",
+      "description": "Credit card representation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "brand": { "type": "string" },
+        "bank": { "type": "string" },
+        "limit": { "type": "number" },
+        "closingDay": { "type": "integer" },
+        "dueDay": { "type": "integer" },
+        "color": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "name", "brand", "bank", "limit", "closingDay", "dueDay", "color"]
+    },
+    "Tag": {
+      "title": "Tag",
+      "description": "Custom transaction tag",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "color": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "name", "color"]
+    },
+    "NotificationSettings": {
+      "title": "NotificationSettings",
+      "description": "Preferences for reminders and messages",
+      "type": "object",
+      "properties": {
+        "cardDueReminders": { "type": "boolean" },
+        "transactionReminders": { "type": "boolean" },
+        "reminderTime": { "type": "string" },
+        "daysBeforeDue": { "type": "integer" },
+        "userId": { "type": "string" }
+      },
+      "required": ["cardDueReminders", "transactionReminders", "reminderTime", "daysBeforeDue", "userId"]
+    }
+  },
+  "firestore": {
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "User transactions collection"
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Transaction categories collection"
+    },
+    "/accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/Account" },
+      "description": "User financial accounts"
+    },
+    "/credit_cards/{creditCardId}": {
+      "schema": { "$ref": "#/entities/CreditCard" },
+      "description": "User credit cards list"
+    },
+    "/tags/{tagId}": {
+      "schema": { "$ref": "#/entities/Tag" },
+      "description": "Transaction tags list"
+    },
+    "/notification_settings/{userId}": {
+      "schema": { "$ref": "#/entities/NotificationSettings" },
+      "description": "User specific email and calendar settings"
+    }
+  }
+}

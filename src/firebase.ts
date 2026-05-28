@@ -8,30 +8,12 @@ import {
   signInWithEmailAndPassword as firebaseSignInWithEmailAndPassword, 
   createUserWithEmailAndPassword as firebaseCreateUserWithEmailAndPassword 
 } from "firebase/auth";
-
-const cleanEnv = (val: any) => typeof val === 'string' ? val.trim().replace(/^["']|["']$/g, '') : val;
-
-const firebaseConfig = {
-  apiKey: cleanEnv(import.meta.env.VITE_FIREBASE_API_KEY),
-  authDomain: cleanEnv(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN),
-  projectId: cleanEnv(import.meta.env.VITE_FIREBASE_PROJECT_ID),
-  storageBucket: cleanEnv(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET),
-  messagingSenderId: cleanEnv(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID),
-  appId: cleanEnv(import.meta.env.VITE_FIREBASE_APP_ID),
-  measurementId: cleanEnv(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID)
-};
-
-// Validate config before initialization
-const missingKeys = Object.entries(firebaseConfig)
-  .filter(([key, value]) => !value && key !== 'measurementId')
-  .map(([key]) => `VITE_FIREBASE_${key.replace(/[A-Z]/g, letter => `_${letter}`).toUpperCase()}`);
-
-if (missingKeys.length > 0) {
-  console.warn(`Configuração do Firebase incompleta. Faltam as seguintes variáveis: ${missingKeys.join(', ')}. Configure-as no painel de Secrets.`);
-}
+import { getFirestore, doc, getDocFromServer } from "firebase/firestore";
+import firebaseConfig from "../firebase-applet-config.json";
 
 let app;
 let auth: any;
+let db: any;
 let googleProvider: any;
 
 const onAuthStateChanged = (authObj: any, callback: any) => {
@@ -65,15 +47,30 @@ const createUserWithEmailAndPassword = (authObj: any, email: any, pass: any) => 
 try {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
+  db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
   googleProvider = new GoogleAuthProvider();
+
+  // Test the connection as instructed by the skill
+  const testConnection = async () => {
+    try {
+      await getDocFromServer(doc(db, 'test', 'connection'));
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('the client is offline')) {
+        console.error("Please check your Firebase configuration.");
+      }
+    }
+  };
+  testConnection();
 } catch (e) {
   console.error("Erro ao inicializar Firebase:", e);
   auth = { isMock: true };
+  db = { isMock: true };
   googleProvider = {};
 }
 
 export { 
   auth,
+  db,
   googleProvider,
   signInWithPopup, 
   signOut, 

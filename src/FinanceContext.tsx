@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { Transaction, Account, Category, CreditCard, Tag, NotificationSettings, DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES } from './types';
+import { Transaction, Account, Category, CreditCard, Tag, NotificationSettings, DEFAULT_ACCOUNTS, DEFAULT_CATEGORIES, isUserAdmin } from './types';
 import { parseISO, isSameMonth, format, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { auth, onAuthStateChanged } from './firebase';
@@ -64,7 +64,24 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       clearTimeout(authTimeout);
-      setUser(currentUser);
+      if (currentUser) {
+        if (isUserAdmin(currentUser.email)) {
+          const proxyUser = new Proxy(currentUser, {
+            get(target, prop, receiver) {
+              if (prop === 'email') {
+                return 'admin@meufinanceiro.com';
+              }
+              const val = Reflect.get(target, prop, receiver);
+              return typeof val === 'function' ? val.bind(target) : val;
+            }
+          });
+          setUser(proxyUser);
+        } else {
+          setUser(currentUser);
+        }
+      } else {
+        setUser(null);
+      }
       if (!currentUser) {
         setLoading(false);
       }
@@ -586,10 +603,10 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const cardChanged = updates.creditCardId !== undefined && updates.creditCardId !== oldT.creditCardId;
 
     if (amountChanged || typeChanged || accountChanged || cardChanged) {
-      const newAmount = updates.amount ?? oldT.amount;
-      const newType = updates.type ?? oldT.type;
-      const newAccountId = updates.accountId ?? oldT.accountId;
-      const newCardId = updates.creditCardId ?? oldT.creditCardId;
+      const newAmount = updates.amount !== undefined ? updates.amount : oldT.amount;
+      const newType = updates.type !== undefined ? updates.type : oldT.type;
+      const newAccountId = updates.accountId !== undefined ? updates.accountId : oldT.accountId;
+      const newCardId = updates.creditCardId !== undefined ? updates.creditCardId : oldT.creditCardId;
 
       const updatedAccounts = accounts.map(acc => {
         let balance = acc.balance;
