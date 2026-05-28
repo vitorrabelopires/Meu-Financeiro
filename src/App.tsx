@@ -361,50 +361,60 @@ const Dashboard = ({ onViewAll }: { onViewAll: () => void }) => {
               </p>
             </div>
           ) : (
-            sortedMonthlyTransactions.slice(0, 6).map((t) => {
-              const categoryObj = categories.find(c => c.name === t.category);
-              const card = creditCards.find(c => c.id === t.creditCardId);
-              const transactionTags = tags.filter(tag => t.tags?.includes(tag.id));
-              
-              return (
-                <div key={t.id} className="bg-white p-5 rounded-[2rem] flex items-center justify-between card-shadow border border-slate-50 group hover:translate-x-1 transition-all duration-300 hover:bg-slate-50">
-                  <div className="flex items-center gap-4">
-                    <div 
-                      className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-black/5 transition-transform group-hover:scale-110"
-                      style={{ backgroundColor: categoryObj?.color || '#94a3b8' }}
-                    >
-                      <CategoryIcon icon={categoryObj?.icon || 'Wallet'} size={22} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-bold text-slate-800 text-sm">{t.description}</p>
-                        {card && (
-                          <span className="text-[8px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tighter">
-                            {card.name}
-                          </span>
-                        )}
+            <AnimatePresence>
+              {sortedMonthlyTransactions.slice(0, 6).map((t) => {
+                const categoryObj = categories.find(c => c.name === t.category);
+                const card = creditCards.find(c => c.id === t.creditCardId);
+                const transactionTags = tags.filter(tag => t.tags?.includes(tag.id));
+                
+                return (
+                  <motion.div 
+                    key={t.id}
+                    layout
+                    initial={{ opacity: 0, x: -16 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 16 }}
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                    className="bg-white p-5 rounded-[2rem] flex items-center justify-between card-shadow border border-slate-50 group hover:translate-x-1 duration-300 hover:bg-slate-50"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div 
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-black/5 transition-transform group-hover:scale-110"
+                        style={{ backgroundColor: categoryObj?.color || '#94a3b8' }}
+                      >
+                        <CategoryIcon icon={categoryObj?.icon || 'Wallet'} size={22} />
                       </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">{format(parseISO(t.date), 'dd MMM', { locale: ptBR })}</p>
-                        {transactionTags.length > 0 && (
-                          <div className="flex gap-1">
-                            {transactionTags.map(tag => (
-                              <div key={tag.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} title={tag.name} />
-                            ))}
-                          </div>
-                        )}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-slate-800 text-sm">{t.description}</p>
+                          {card && (
+                            <span className="text-[8px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tighter">
+                              {card.name}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <p className="text-slate-400 text-[10px] font-bold uppercase tracking-wider">{format(parseISO(t.date), 'dd MMM', { locale: ptBR })}</p>
+                          {transactionTags.length > 0 && (
+                            <div className="flex gap-1">
+                              {transactionTags.map(tag => (
+                                <div key={tag.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} title={tag.name} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <p className={cn(
-                    "font-black text-base",
-                    t.type === 'income' ? "text-emerald-500" : "text-rose-500"
-                  )}>
-                    {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                  </p>
-                </div>
-              );
-            })
+                    <p className={cn(
+                      "font-black text-base",
+                      t.type === 'income' ? "text-emerald-500" : "text-rose-500"
+                    )}>
+                      {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                    </p>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
           )}
         </div>
       </div>
@@ -2604,7 +2614,14 @@ const TransactionCard = ({
   const transactionTags = tags.filter(tag => t.tags?.includes(tag.id));
   
   return (
-    <div className="bg-white p-5 rounded-[2rem] flex items-center justify-between card-shadow border border-slate-50 group transition-all hover:bg-slate-50">
+    <motion.div 
+      layout
+      initial={{ opacity: 0, x: -16 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 16 }}
+      transition={{ type: "spring", stiffness: 380, damping: 30 }}
+      className="bg-white p-5 rounded-[2rem] flex items-center justify-between card-shadow border border-slate-50 group hover:bg-slate-50"
+    >
       <div className="flex items-center gap-4">
         <div 
           className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-sm"
@@ -2666,7 +2683,7 @@ const TransactionCard = ({
           </button>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -2877,17 +2894,19 @@ const HistoryTab = ({ onEdit }: { onEdit: (t: Transaction) => void }) => {
                 >
                   <div className="p-6 space-y-4">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {futureMonthTransactions.map((t) => (
-                        <TransactionCard
-                          key={t.id}
-                          t={t}
-                          categories={categories}
-                          creditCards={creditCards}
-                          tags={tags}
-                          onEdit={onEdit}
-                          onDelete={setConfirmDelete}
-                        />
-                      ))}
+                      <AnimatePresence>
+                        {futureMonthTransactions.map((t) => (
+                          <TransactionCard
+                            key={t.id}
+                            t={t}
+                            categories={categories}
+                            creditCards={creditCards}
+                            tags={tags}
+                            onEdit={onEdit}
+                            onDelete={setConfirmDelete}
+                          />
+                        ))}
+                      </AnimatePresence>
                     </div>
                   </div>
                 </motion.div>
@@ -2912,17 +2931,19 @@ const HistoryTab = ({ onEdit }: { onEdit: (t: Transaction) => void }) => {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {currentMonthTransactions.map((t) => (
-              <TransactionCard
-                key={t.id}
-                t={t}
-                categories={categories}
-                creditCards={creditCards}
-                tags={tags}
-                onEdit={onEdit}
-                onDelete={setConfirmDelete}
-              />
-            ))}
+            <AnimatePresence>
+              {currentMonthTransactions.map((t) => (
+                <TransactionCard
+                  key={t.id}
+                  t={t}
+                  categories={categories}
+                  creditCards={creditCards}
+                  tags={tags}
+                  onEdit={onEdit}
+                  onDelete={setConfirmDelete}
+                />
+              ))}
+            </AnimatePresence>
           </div>
         )}
       </div>
@@ -2990,17 +3011,19 @@ const HistoryTab = ({ onEdit }: { onEdit: (t: Transaction) => void }) => {
                       >
                         <div className="p-6 space-y-4">
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            {group.transactions.map((t) => (
-                              <TransactionCard
-                                key={t.id}
-                                t={t}
-                                categories={categories}
-                                creditCards={creditCards}
-                                tags={tags}
-                                onEdit={onEdit}
-                                onDelete={setConfirmDelete}
-                              />
-                            ))}
+                            <AnimatePresence>
+                              {group.transactions.map((t) => (
+                                <TransactionCard
+                                  key={t.id}
+                                  t={t}
+                                  categories={categories}
+                                  creditCards={creditCards}
+                                  tags={tags}
+                                  onEdit={onEdit}
+                                  onDelete={setConfirmDelete}
+                                />
+                              ))}
+                            </AnimatePresence>
                           </div>
                         </div>
                       </motion.div>
